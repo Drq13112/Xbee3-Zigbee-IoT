@@ -1,0 +1,10 @@
+﻿"Symbol";"Value";"Unit";
+"TraceParts.PartNumber";"90-09042024-077512";"";
+"REFERENCE";"1724480010";"";
+"TraceParts.PartTitle";"Mini-Fit Jr.";"";
+"TraceParts.InstanceId";"90-09042024-0775122N3XX9WWY2MK673V115V3T3RA";"";
+"SUPPLIER";"Molex";"";
+"DESIGN";"Mini-Fit Jr. Header, Dual Row, Right-Angle, with Snap-in Plastic Peg PCB  Lock, 10 Circuits, PA Polyamide Nylon 6/6 94V-2, Tin (Sn) Plating, Glow-Wire Capable";"";
+"TRACEPARTS";"TRACEPARTS";"";
+"TraceParts.PartLanguage";"en";"";
+"TraceParts.PartVersion";"1.0.2";"";
