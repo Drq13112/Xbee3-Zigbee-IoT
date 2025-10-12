@@ -5,11 +5,19 @@ import xbee
 from ssd1306 import SSD1306_I2C
 from sys import stdin, stdout
 
+from xbee_devices import COORDINATORS, DEVICES, DEFAULT_DID
+from xbee_devices import get_device_names, get_coordinator_names
+from menu_handler import MenuHandler
 
 # --- Config ---
-C_ADDR = b'\x00\x13\xA2\x00\x42\x3D\x8B\x99'
-D_ADDR = b'\x00\x13\xA2\x00\x42\x3D\x8A\xAC'
-DID = "XBEE_TELEMANDO"
+# Instead of hardcoded addresses, use the current selected device
+current_device_name = get_device_names()[0]  # Start with first device
+current_coordinator_name = get_coordinator_names()[0]  # Start with first coordinator
+
+# These variables will be updated when user selects a different device
+C_ADDR = COORDINATORS[current_coordinator_name]
+D_ADDR = DEVICES[current_device_name]
+DID = DEFAULT_DID
 
 # --- Timers ---
 T_SLEEP = 900000     # 15 min
@@ -35,60 +43,9 @@ state = S_INIT
 w = None
 last = 0
 cmd = ""
-mpos = 0
-mact = False
 msg = ""
 last_act = 0
 uart = None  # Para comandos seriales
-extra_msg = ""  # For additional status line
-
-
-# --- Menu ---
-M_OPT = ["CAMARA ON", "CAMARA OFF", "CAMARA REPORT"]
-M_CMD = ["TEL:ON", "TEL:OFF", "TEL:REPORT"]
-
-# --- Display functions ---
-def menu_display(lcd, ops, pos, sts=""):
-    """Display menu with options and selection indicator"""
-    global extra_msg
-    lcd.fill(0)
-    
-    # Title
-    lcd.text("TELEMANDO", 0, 0)
-    lcd.text("{:.1f}V".format(bat_st(False)), lcd.width - 40, 0)
-
-    # Separator line
-    lcd.hline(0, 10, lcd.width, 1)
-    
-    # Menu options - maximum 4 options
-    for i, op in enumerate(ops):
-        if i < 3:
-            y = 16 + (i * 8)
-            
-            # Show menu text
-            lcd.text(op[:15], 8, y)
-            
-            # Show selection arrow on the right side
-            if i == pos:
-                lcd.text(">", lcd.width - 10, y)
-    
-    # Status text at the bottom (two lines)
-    if extra_msg:
-        lcd.text(sts[:32], 0, lcd.height - 16)
-        lcd.text(extra_msg[:32], 0, lcd.height - 8)
-    
-    if sts and not extra_msg:
-        lcd.text(sts[:32], 32, lcd.height - 16)
-        lcd.text(extra_msg[:32], 0, lcd.height - 8)
-        
-    lcd.show()
-
-def standby_display(lcd, bat):
-    """Display standby screen with battery status"""
-    lcd.fill(0)
-    lcd.text("TELEMANDO", 20, 8)
-    lcd.text(bat, 20, 24)
-    lcd.show()
 
 # --- Funciones ---
 def bat_st(as_string=True):
@@ -104,6 +61,12 @@ def bat_st(as_string=True):
     except:
         return "BAT: ERR" if as_string else 0.0
 
+def update_device(device_name):
+    """Update current device and its address"""
+    global current_device_name, D_ADDR
+    current_device_name = device_name
+    D_ADDR = DEVICES[current_device_name]
+
 def net_ok():
     try:
         ai = xbee.atcmd("AI")
@@ -112,10 +75,10 @@ def net_ok():
         return False
 
 def send(addr, mensaje, wait=False, retry=1):
-    global w, msg, extra_msg
-    extra_msg = ""  # Reset extra message
+    global w, menu_handler
+    menu_handler.extra_msg = ""  # Reset extra message
     if not net_ok():
-        msg = "NO RED"
+        menu_handler.msg = "NO RED"
         return False
     
     start = time.ticks_ms()
@@ -126,7 +89,7 @@ def send(addr, mensaje, wait=False, retry=1):
             xbee.transmit(addr, mensaje.encode('utf-8'))
             
             if not wait:
-                msg = "OK"
+                menu_handler.msg = "OK"
                 return True
             
             t_start = time.ticks_ms()
@@ -150,40 +113,38 @@ def send(addr, mensaje, wait=False, retry=1):
                         elif part.startswith('Bateria:'):
                             bateria = part
                     
-                    msg = camara if camara else "ACK OK"
-                    extra_msg = bateria if bateria else ""
+                    menu_handler.msg = camara if camara else "ACK OK"
+                    menu_handler.extra_msg = bateria if bateria else ""
                     
                     return True
                 time.sleep_ms(10)
                 
                 if time.ticks_diff(time.ticks_ms(), start) > 5000:
-                    msg = "TIMEOUT"
+                    menu_handler.msg = "TIMEOUT"
                     return False
                 
-            msg = "NO ACK"
+            menu_handler.msg = "NO ACK"
             
         except Exception as e:
             w.feed()
             print("Error: {}".format(e))
-            msg = "ERR"
+            menu_handler.msg = "ERR"
             
         if att < retry - 1:
             w.feed()
             time.sleep_ms(250)
     
-    msg = "FALLO"
+    menu_handler.msg = "FALLO"
     return False
 
 def main():
-    global state, w, last, cmd, mpos, mact, msg, last_act, uart, extra_msg
+    global state, w, last, cmd, last_act, uart, menu_handler
     
     try:
         # Init HW
         w = WDT(timeout=T_WDT)
         w.feed()
         did = xbee.atcmd('NI') or DID
-        
-        # No need for UART init, using sys.stdin for console
         
         # Initialize I2C with explicit pins and frequency
         i2c = I2C(1)  # Use 400kHz standard frequency
@@ -201,11 +162,9 @@ def main():
         lcd = SSD1306_I2C(128, 64, i2c)
         
         # Manual reset sequence for OLED
-        # Power off
-        lcd.write_cmd(0xAE)  # SET_DISP | 0x00
+        lcd.write_cmd(0xAE)  # Power off
         time.sleep_ms(100)
-        # Power on
-        lcd.write_cmd(0xAF)  # SET_DISP | 0x01
+        lcd.write_cmd(0xAF)  # Power on
         time.sleep_ms(100)
         
         # Re-initialize
@@ -224,13 +183,17 @@ def main():
         time.sleep_ms(1000)
         w.feed()
         
-        # Force menu to be active from start
-        mact = True
+        # Initialize menu handler
+        menu_handler = MenuHandler(lcd, bat_st)
+        menu_handler.set_device_info(current_device_name, current_coordinator_name)
+        menu_handler.mact = True  # Force menu to be active from start
+        
         if not net_ok():
-            msg = "RED ERROR"
+            menu_handler.msg = "RED ERROR"
         else:
-            msg = "RED OK"
-        menu_display(lcd, M_OPT, mpos, msg)
+            menu_handler.msg = "RED OK"
+            
+        menu_handler.menu_display()
         time.sleep_ms(500)
         w.feed()
         
@@ -260,11 +223,14 @@ def main():
                 state = S_IDLE
                     
             elif state == S_IDLE:
-                if not mact:
-                    standby_display(lcd, bat_st())
+                if not menu_handler.mact:
+                    menu_handler.standby_display()
                 else:
                     # Always refresh the menu when active
-                    menu_display(lcd, M_OPT, mpos, msg)
+                    if menu_handler.selection_menu:
+                        menu_handler.device_selection_menu(get_device_names())
+                    else:
+                        menu_handler.menu_display()
                 
                 t_start = time.ticks_ms()
                 
@@ -273,14 +239,12 @@ def main():
                     now = time.ticks_ms()
                     
                     # Auto exit menu after inactivity
-                    if mact and time.ticks_diff(now, last_act) > 60000:
-                        mact = False
-                        standby_display(lcd, bat_st())
-                        
+                    menu_handler.check_timeout(now)
+                    
                     if not net_ok():
-                        msg = "RED ERROR"
+                        menu_handler.msg = "RED ERROR"
                     else:
-                        msg = "RED OK"
+                        menu_handler.msg = "RED OK"
                     
                     # Serial command simulation (from XCTU terminal)
                     try:
@@ -289,80 +253,57 @@ def main():
                             serial_cmd = serial_cmd.upper()
                             if 'U' in serial_cmd:
                                 last = now
-                                last_act = now
-                                if not mact:
-                                    mact = True
-                                else:
-                                    mpos = (mpos - 1) % len(M_OPT)
-                                extra_msg = ""  # Reset extra message
-                                menu_display(lcd, M_OPT, mpos, msg)
+                                state_change, new_state = menu_handler.handle_button_press('UP', now, get_device_names, update_device)
+                                if state_change:
+                                    state = new_state
+                                    cmd = menu_handler.get_command()
+                                    break
                             elif 'O' in serial_cmd:
                                 last = now
-                                last_act = now
-                                if mact:
-                                    cmd = M_CMD[mpos]
-                                    state = S_CMD
-                                    msg = "ENVIANDO"
-                                    extra_msg = ""  # Reset extra message
-                                    menu_display(lcd, M_OPT, mpos, msg)
+                                state_change, new_state = menu_handler.handle_button_press('OK', now, get_device_names, update_device)
+                                if state_change:
+                                    state = new_state
+                                    cmd = menu_handler.get_command()
                                     break
-                                else:
-                                    mact = True
-                                    menu_display(lcd, M_OPT, mpos, msg)
                             elif 'D' in serial_cmd:
                                 last = now
-                                last_act = now
-                                if not mact:
-                                    mact = True
-                                else:
-                                    mpos = (mpos + 1) % len(M_OPT)
-                                extra_msg = ""  # Reset extra message
-                                menu_display(lcd, M_OPT, mpos, msg)
+                                state_change, new_state = menu_handler.handle_button_press('DOWN', now, get_device_names, update_device)
+                                if state_change:
+                                    state = new_state
+                                    cmd = menu_handler.get_command()
+                                    break
                     except:
                         pass
-                    
+                
                     # Button handling
                     if time.ticks_diff(now, last) > T_DEB:
                         if bUP.value() == 0:
                             last = now
-                            last_act = now
-                            
-                            if not mact:
-                                mact = True
-                            else:
-                                mpos = (mpos - 1) % len(M_OPT)
-                            
-                            menu_display(lcd, M_OPT, mpos, msg)
+                            state_change, new_state = menu_handler.handle_button_press('UP', now, get_device_names, update_device)
+                            if state_change:
+                                state = new_state
+                                cmd = menu_handler.get_command()
+                                break
                             time.sleep_ms(T_DEB)
                             
                         elif bDN.value() == 0:
                             last = now
-                            last_act = now
-                            
-                            if not mact:
-                                mact = True
-                            else:
-                                mpos = (mpos + 1) % len(M_OPT)
-                            
-                            menu_display(lcd, M_OPT, mpos, msg)
+                            state_change, new_state = menu_handler.handle_button_press('DOWN', now, get_device_names, update_device)
+                            if state_change:
+                                state = new_state
+                                cmd = menu_handler.get_command()
+                                break
                             time.sleep_ms(T_DEB)
                             
                         elif bOK.value() == 0:
                             last = now
-                            last_act = now
-                            
-                            if mact:
-                                cmd = M_CMD[mpos]
-                                state = S_CMD
-                                msg = "ENVIANDO"
-                                menu_display(lcd, M_OPT, mpos, msg)
+                            state_change, new_state = menu_handler.handle_button_press('OK', now, get_device_names, update_device)
+                            if state_change:
+                                state = new_state
+                                cmd = menu_handler.get_command()
                                 break
-                            else:
-                                mact = True
-                                menu_display(lcd, M_OPT, mpos, msg)
-                            
                             time.sleep_ms(T_DEB)
-                    
+                
                     time.sleep_ms(50)
                     
                     if time.ticks_diff(time.ticks_ms(), t_start) >= T_SLEEP:
@@ -372,17 +313,19 @@ def main():
                     state = S_REP
                 
             elif state == S_CMD:
-                menu_display(lcd, M_OPT, mpos, "ENVIANDO")
+                menu_handler.msg = "ENVIANDO"
+                menu_handler.menu_display()
                 w.feed()
                 
                 if not net_ok():
-                    menu_display(lcd, M_OPT, mpos, "RED ERROR")
+                    menu_handler.msg = "RED ERROR"
+                    menu_handler.menu_display()
                     time.sleep_ms(1000)
                     state = S_IDLE
                     continue
                 
                 send(D_ADDR, cmd, True)
-                menu_display(lcd, M_OPT, mpos, msg)
+                menu_handler.menu_display()
                 
                 state = S_IDLE
                 cmd = ""
@@ -393,13 +336,14 @@ def main():
                 w.feed()
                 message = "{}:{:.1f}:REPORTE".format(did, bat_st(False))
                 
-                if mact:
-                    menu_display(lcd, M_OPT, mpos, "REPORTE")
+                if menu_handler.mact:
+                    menu_handler.msg = "REPORTE"
+                    menu_handler.menu_display()
                 else:
-                    standby_display(lcd, "REPORTE")
+                    menu_handler.standby_display()
                 
                 if not net_ok():
-                    msg = "RED ERROR"
+                    menu_handler.msg = "RED ERROR"
                     state = S_IDLE
                     continue
                     
