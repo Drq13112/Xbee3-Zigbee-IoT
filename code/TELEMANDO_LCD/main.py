@@ -21,9 +21,9 @@ DID = DEFAULT_DID
 
 # --- Timers ---
 T_SLEEP = 900000     # 15 min
-T_RETRY = 1000       # 1 segundo
+T_RETRY = 100       # 100 milisegundos
 T_WDT = 10000        # 10 segundos
-T_DEB = 100          # debounce
+T_DEB = 20          # debounce
 
 # --- Pines ---
 bUP = Pin('D2', Pin.IN, Pin.PULL_UP)
@@ -215,13 +215,30 @@ def main():
                     lcd.text("RED OK", 30, 16)
                     lcd.show()
                     time.sleep_ms(500)
-                    send(C_ADDR, "{}:{:.1f}:INICIO".format(did, bat_st(False)), False)
+                    send(C_ADDR, did+":"+str(int(bat_st(False)))+":INICIO", False)
                 else:
                     lcd.fill(0)
                     lcd.text("RED ERROR", 30, 16)
                     lcd.show()
                 state = S_IDLE
                     
+            elif state == S_CMD:
+                menu_handler.msg = "ENVIANDO"
+                menu_handler.menu_display()
+                w.feed()
+                
+                
+                # Update last activity to prevent menu timeout
+                menu_handler.last_act = time.ticks_ms()
+                
+                send(D_ADDR, cmd, True)
+                menu_handler.menu_display()
+                
+                state = S_IDLE
+                cmd = ""
+                time.sleep_ms(20)
+                w.feed()
+                
             elif state == S_IDLE:
                 if not menu_handler.mact:
                     menu_handler.standby_display()
@@ -241,11 +258,6 @@ def main():
                     # Auto exit menu after inactivity
                     menu_handler.check_timeout(now)
                     
-                    if not net_ok():
-                        menu_handler.msg = "RED ERROR"
-                    else:
-                        menu_handler.msg = "RED OK"
-                    
                     # Serial command simulation (from XCTU terminal)
                     try:
                         serial_cmd = stdin.read()  # Non-blocking read
@@ -255,21 +267,21 @@ def main():
                                 last = now
                                 state_change, new_state = menu_handler.handle_button_press('UP', now, get_device_names, update_device)
                                 if state_change:
-                                    state = new_state
+                                    state = S_CMD if new_state == 'CMD' else S_IDLE
                                     cmd = menu_handler.get_command()
                                     break
                             elif 'O' in serial_cmd:
                                 last = now
                                 state_change, new_state = menu_handler.handle_button_press('OK', now, get_device_names, update_device)
                                 if state_change:
-                                    state = new_state
+                                    state = S_CMD if new_state == 'CMD' else S_IDLE
                                     cmd = menu_handler.get_command()
                                     break
                             elif 'D' in serial_cmd:
                                 last = now
                                 state_change, new_state = menu_handler.handle_button_press('DOWN', now, get_device_names, update_device)
                                 if state_change:
-                                    state = new_state
+                                    state = S_CMD if new_state == 'CMD' else S_IDLE
                                     cmd = menu_handler.get_command()
                                     break
                     except:
@@ -281,7 +293,7 @@ def main():
                             last = now
                             state_change, new_state = menu_handler.handle_button_press('UP', now, get_device_names, update_device)
                             if state_change:
-                                state = new_state
+                                state = S_CMD if new_state == 'CMD' else S_IDLE
                                 cmd = menu_handler.get_command()
                                 break
                             time.sleep_ms(T_DEB)
@@ -290,7 +302,7 @@ def main():
                             last = now
                             state_change, new_state = menu_handler.handle_button_press('DOWN', now, get_device_names, update_device)
                             if state_change:
-                                state = new_state
+                                state = S_CMD if new_state == 'CMD' else S_IDLE
                                 cmd = menu_handler.get_command()
                                 break
                             time.sleep_ms(T_DEB)
@@ -299,7 +311,7 @@ def main():
                             last = now
                             state_change, new_state = menu_handler.handle_button_press('OK', now, get_device_names, update_device)
                             if state_change:
-                                state = new_state
+                                state = S_CMD if new_state == 'CMD' else S_IDLE
                                 cmd = menu_handler.get_command()
                                 break
                             time.sleep_ms(T_DEB)
@@ -312,26 +324,6 @@ def main():
                 if state == S_IDLE and time.ticks_diff(time.ticks_ms(), t_start) >= T_SLEEP:
                     state = S_REP
                 
-            elif state == S_CMD:
-                menu_handler.msg = "ENVIANDO"
-                menu_handler.menu_display()
-                w.feed()
-                
-                if not net_ok():
-                    menu_handler.msg = "RED ERROR"
-                    menu_handler.menu_display()
-                    time.sleep_ms(1000)
-                    state = S_IDLE
-                    continue
-                
-                send(D_ADDR, cmd, True)
-                menu_handler.menu_display()
-                
-                state = S_IDLE
-                cmd = ""
-                time.sleep_ms(1000)
-                w.feed()
-
             elif state == S_REP:
                 w.feed()
                 message = "{}:{:.1f}:REPORTE".format(did, bat_st(False))
@@ -350,7 +342,7 @@ def main():
                 send(C_ADDR, message, False)
                 
                 state = S_IDLE
-                time.sleep_ms(1000)
+                time.sleep_ms(20)
                 w.feed()
 
             elif state == S_ERR:
@@ -366,7 +358,7 @@ def main():
             print("Err: {}".format(e))
             try:
                 lcd.fill(0)
-                lcd.text("ERROR", 0, 8)
+                lcd.text("ERROR SISTEMA", 0, 8)
                 lcd.show()
             except:
                 pass

@@ -55,65 +55,52 @@ class MenuHandler:
             
         self.lcd.fill(0)
         
-        # Title
+        # Title - smaller text, no battery formatting in menu
         self.lcd.text("TELEMANDO", 0, 0)
-        battery_value = self.bat_st(False)
-        battery_text = "{:.1f}V".format(battery_value)
-        self.lcd.text(battery_text, self.lcd.width - 40, 0)
+        self.lcd.text(str(int(self.bat_st(False)))+"V", self.lcd.width - 25, 0)
 
         # Separator line
         self.lcd.hline(0, 10, self.lcd.width, 1)
         
-        # Menu options - maximum 4 options -> CAMARA_ID ,ON, OFF, REPORT
+        # Menu options - maximum 4 options
         for i, op in enumerate(ops):
             if i < 4:
-                y = 16 + (i * 8)
+                y = 15 + (i * 8)
                 
-                if op == "":
-                    self.lcd.text("{}".format(self.current_device_name), 8, y)
-                    
-                # Show menu text
-                self.lcd.text(op[:15], 8, y)
+                if i == 0:  # First option shows device name
+                    self.lcd.text(self.current_device_name, 8, y)
+                else:
+                    # Show menu text without string slicing (saves memory)
+                    self.lcd.text(op, 8, y)
                 
-                # Show selection arrow on the right side
+                # Show selection arrow
                 if i == self.mpos:
-                    self.lcd.text(">", self.lcd.width - 10, y)
+                    self.lcd.text("<", self.lcd.width - 10, y)
         
-        # Status text at the bottom (two lines)
-        if self.extra_msg:
-            self.lcd.text(sts[:32], 0, self.lcd.height - 16)
-            self.lcd.text(self.extra_msg[:32], 0, self.lcd.height - 8)
-        
-        if sts and not self.extra_msg:
-            self.lcd.text(sts[:32], 32, self.lcd.height - 16)
+        # Status text at bottom - simplified
+        if sts:
+            self.lcd.text(sts, 0, self.lcd.height - 8)
         
         self.lcd.show()
-    
-    def device_selection_menu(self, device_names):
-        """Display device selection menu"""
-        self.lcd.fill(0)
-        
-        # Title
-        self.lcd.text("SELEC. CAMARA", 0, 0)
-        # battery_value = self.bat_st(False)
-        # battery_text = "{:.1f}V".format(battery_value)
-        # self.lcd.text(battery_text, self.lcd.width - 40, 0)
 
-        # Separator line
+    def device_selection_menu(self, device_names):
+        """Display device selection menu - optimized"""
+        self.lcd.fill(0)
+        self.lcd.text("SEL.CAMARA", 0, 0)
         self.lcd.hline(0, 10, self.lcd.width, 1)
         
-        # Show available devices
+        # Show available devices - max 5
         for i, name in enumerate(device_names):
-            if i < 5:  # Maximum 5 devices visible at once
+            if i < 5:
                 y = 16 + (i * 8)
                 self.lcd.text(name, 8, y)
                 
-                # Mark current selection
+                # Mark selection
                 if name == self.current_device_name:
-                    self.lcd.text(">", self.lcd.width - 10, y)
+                    self.lcd.text("<", self.lcd.width - 10, y)
         
         self.lcd.show()
-    
+
     def standby_display(self):
         """Display standby screen with battery status"""
         self.lcd.fill(0)
