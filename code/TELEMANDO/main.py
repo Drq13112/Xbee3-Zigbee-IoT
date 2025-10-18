@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import sys
+from code.Camara.main import check_and_process_incoming_messages
 from machine import Pin, WDT, ADC
 import machine
 import time
@@ -18,11 +19,15 @@ DEVICE_ID = "XBEE_TELEMANDO"
 DEVICE_ID_NI = "NONE"
 
 # Periodos de tiempo (en milisegundos)
-SLEEP_DURATION_MS = 60000*15    # Reporte periódico cada 15 minutos
-RETRY_DELAY_MS = 5000           # Espera entre reintentos de envío
-WATCHDOG_TIMEOUT_MS = 60000     # 60 segundos. Debe ser mayor que cualquier espera.
-STATE_ERROR_SLEEP_MS = 5000     # 5 segundos en estado de error
-DEBOUNCE_MS = 50                # Tiempo para evitar rebotes en los pulsadores
+SLEEP_DURATION_MS = 100                     # Tiempo de espera en modo sleep       
+RETRY_DELAY_MS = 3000                       # Tiempo de espera entre reintentos de envio     
+WATCHDOG_TIMEOUT_MS = 120000                # Tiempo de timeout del watchdog
+STATE_ERROR_SLEEP_MS = 5000                 # Segundos en estado de error
+DEBOUNCE_BOTTON_TIME_MS = 4000              # Tiempo para resetear último comando tras inactividad
+DEBOUNCE_SENSOR_TIME_MS = 30000             # Tiempo de debounce para notificaciones del sensor
+CHECK_SENSOR_INTERVAL_MS = 1000             # Intervalo para comprobar el estado del sensor una vez activado
+CAMERA_ON_DURATION_MS = 60000               # Duración en ms que la cámara permanece encendida tras activación por sensor
+
 
 # --- Pines ---
 pin_sensor_1 = Pin('D0', Pin.IN, Pin.PULL_UP)   # Sensor digital (no usado en telemando)
@@ -36,7 +41,7 @@ AV_VALUES = {0: 1.25, 1: 2.5, 2: 3.3, None: 2.5}
 
 # --- Estados del Dispositivo ---
 STATE_STARTUP = 0
-STATE_IDLE = 1
+STATE_SLEEP = 1
 STATE_REPORT_BATTERY = 2
 STATE_SEND_COMMAND = 3
 STATE_ERROR = 4
@@ -48,6 +53,7 @@ dog = None
 last_press_time = 0
 command_to_send = ""
 last_command = 0
+contador_sensor = 0
 
 # --- Funciones Auxiliares ---
 def get_battery_status(as_string=True):
@@ -137,9 +143,36 @@ def safe_send_and_wait_ack(target_addr, message, retries=3):
     print("Fallo al enviar y confirmar mensaje tras varios reintentos.")
     return False
 
+def check_and_process_incoming_messages():
+    """
+    Procesa los mensajes entrantes y responde cuando sea necesario.
+    """
+    global device_state, contador_fallo_comunicacion
+    
+    received_msg = xbee.receive()
+    if not received_msg:
+        return False
+
+    payload = received_msg['payload'].decode('utf-8').strip()
+    sender = received_msg['sender_eui64']
+    
+    print("Mensaje recibido: '{}' de {}".format(payload, [hex(b) for b in sender]))
+    
+    if payload == "REPORT":
+        print("Solicitud de reporte recibida, enviando respuesta...")
+        battery_voltage = get_battery_status(as_string=False)
+        status_data = "Contador={}".format(
+            contador_sensor
+            )
+        response = "{}:{:.2f}:{}".format(DEVICE_ID_NI, battery_voltage, status_data)
+        safe_send(sender, response)
+        return True
+
+    return False
+
 # --- Lógica Principal (Máquina de Estados) ---
 def main():
-    global device_state, xb, dog, DEVICE_ID_NI, last_press_time, command_to_send, last_command
+    global device_state, xb, dog, DEVICE_ID_NI, last_press_time, command_to_send, last_command, contador_sensor
 
     try:
         dog = WDT(timeout=WATCHDOG_TIMEOUT_MS)
@@ -164,23 +197,23 @@ def main():
                 battery_voltage = get_battery_status(as_string=False)
                 message = "{}:{:.2f}:Dispositivo iniciado.".format(DEVICE_ID_NI, battery_voltage)
                 if safe_send_and_wait_ack(COORDINATOR_64BIT_ADDR, message):
-                    device_state = STATE_IDLE
+                    device_state = STATE_SLEEP
                 else:
                     print("No se pudo contactar al coordinador en el arranque.")
                     device_state = STATE_ERROR
 
-            elif device_state == STATE_IDLE:
-                print("--- Estado: IDLE --- (Esperando comandos)")
-                idle_start = time.ticks_ms()
+            elif device_state == STATE_SLEEP:
+                print("--- Estado: SLEEP --- (Esperando comandos)")
                 
-                while time.ticks_diff(time.ticks_ms(), idle_start) < SLEEP_DURATION_MS:
+                while (True):
                     dog.feed()
+                    
                     current_time = time.ticks_ms()
-                    if time.ticks_diff(current_time, last_press_time) > 7000:
-                        last_command = 0 # Resetear último comando tras 7 segundos sin actividad
+                    if time.ticks_diff(current_time, last_press_time) > DEBOUNCE_BOTTON_TIME_MS:
+                        last_command = 0 
 
                     # Comprobar si ha pasado el tiempo de debounce
-                    if time.ticks_diff(current_time, last_press_time) > DEBOUNCE_MS:
+                    if time.ticks_diff(current_time, last_press_time) > 1000:
                         if pin_cmd_on.value() == 0 and last_command != 1:
                             print("Boton ON presionado.")
                             command_to_send = "TEL:ON"
@@ -195,41 +228,25 @@ def main():
                             break
                         elif pin_report_req.value() == 0 and last_command != 3:
                             print("Boton REPORTE presionado.")
-                            command_to_send = "TEL:REPORT"
+                            command_to_send = "REPORT"
                             device_state = STATE_SEND_COMMAND
                             last_command = 3
                             break
-                    
-                    time.sleep_ms(50) # Pequeña pausa para no saturar CPU
+                        
+                    if check_and_process_incoming_messages():
+                        continue # Si se procesó un comando, reiniciar el bucle
 
-                # Si el bucle termina sin pulsar nada, pasa a reportar batería
-                if device_state == STATE_IDLE:
-                    device_state = STATE_REPORT_BATTERY
-                
+                    time.sleep_ms(SLEEP_DURATION_MS) # Pequeña pausa para no saturar CPU
+
             elif device_state == STATE_SEND_COMMAND:
                 print("--- Estado: SEND_COMMAND ---")
-                last_press_time = time.ticks_ms() # Actualizar tiempo para debounce
-                
-                battery_voltage = get_battery_status(as_string=False)
-                # El mensaje ahora solo contiene el comando, sin batería ni ID.
-                # El formato es "TEL:ON", "TEL:OFF", o "TEL:REPORT"
+                last_press_time = time.ticks_ms()
                 message = command_to_send
-                
                 if not safe_send_and_wait_ack(CAMERA_DEVICE_64BIT_ADDR, message):
-                    device_state = STATE_ERROR # Error si no hay ACK
-                else:
-                    device_state = STATE_IDLE # Volver a esperar
-                command_to_send = "" # Limpiar comando
-
-            elif device_state == STATE_REPORT_BATTERY:
-                print("--- Estado: REPORT_BATTERY ---")
-                battery_voltage = get_battery_status(as_string=False)
-                message = "{}:{:.2f}:Reporte periodico.".format(DEVICE_ID_NI, battery_voltage)
-                if safe_send_and_wait_ack(COORDINATOR_64BIT_ADDR, message):
-                    device_state = STATE_IDLE
-                else:
-                    print("Fallo al enviar reporte de batería.")
-                    device_state = STATE_ERROR
+                    contador_sensor += 1
+                    print("Fallo al notificar al dispositivo cámara. Contador de fallos: {}".format(contador_sensor))
+                device_state = STATE_SLEEP
+                command_to_send = ""
 
             elif device_state == STATE_ERROR:
                 print("--- Estado: ERROR ---")

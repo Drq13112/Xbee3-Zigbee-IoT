@@ -4,6 +4,7 @@ from machine import Pin, WDT, ADC
 import machine
 import time
 import xbee
+import tools
 
 # --- Configuración ---
 # Objetivo para reportes periódicos y de estado
@@ -14,12 +15,13 @@ DEVICE_ID = "XBEE_CAM"
 DEVICE_ID_NI = "NONE"
 
 # Periodos de tiempo (en milisegundos)
-SLEEP_DURATION_MS = 60000*15  # Reporte periódico cada 15 minutos
-CAMERA_ON_DURATION_MS = 120000  # 120 segs
-RETRY_DELAY_MS = 5000
-WATCHDOG_TIMEOUT_MS = 60000 # 60 segundos. Debe ser mayor que cualquier espera.
-STATE_ERROR_SLEEP_MS = 5000 # 5 segundos en estado de error
-TIME_TO_REPORT_SENSOR_TRIGGERED = 5000 # 5 segundos para enviar alerta tras sensor activado
+SLEEP_DURATION_MS = 100                     # Tiempo de espera en modo sleep       
+RETRY_DELAY_MS = 3000                       # Tiempo de espera entre reintentos de envio     
+WATCHDOG_TIMEOUT_MS = 120000                # Tiempo de timeout del watchdog
+STATE_ERROR_SLEEP_MS = 5000                 # Segundos en estado de error
+DEBOUNCE_TIME_MS = 30000                    # Tiempo de debounce para notificaciones del sensor
+CHECK_SENSOR_INTERVAL_MS = 1000             # Intervalo para comprobar el estado del sensor una vez activado
+CAMERA_ON_DURATION_MS = 60000               # Duración en ms que la cámara permanece encendida tras activación por sensor
 
 # --- Pines ---
 pin_sensor_1 = Pin('D0', Pin.IN, Pin.PULL_UP)
@@ -34,7 +36,7 @@ AV_VALUES = {0: 1.25, 1: 2.5, 2: 3.3, None: 2.5}
 
 # --- Estados del Dispositivo ---
 STATE_STARTUP = 0
-STATE_IDLE = 1
+STATE_SLEEP = 1
 STATE_REPORT_BATTERY = 2
 STATE_SENSOR_TRIGGERED = 3
 STATE_ERROR = 4
@@ -46,6 +48,7 @@ xb = None
 dog = None
 manual_camera = False # Flag para anular el temporizador de la cámara
 report_time = 0
+contador_fallo_comunicacion = 0
 
 # --- Funciones Auxiliares ---
 def get_battery_status(as_string=True):
@@ -153,7 +156,7 @@ def check_and_process_incoming_messages():
     payload_str = received_msg['payload'].decode('utf-8')
     print("Mensaje recibido de {}: '{}'".format(sender_addr, payload_str))
 
-    # Comandos esperados: "TEL:ON", "TEL:OFF", "TEL:REPORT"
+    # Comandos esperados: "TEL:ON", "TEL:OFF", "REPORT", "SENSOR:ON"
 
     command = payload_str
     response_message = "{}:OK".format(command)
@@ -162,7 +165,7 @@ def check_and_process_incoming_messages():
         print("Comando ON recibido. Encendiendo cámara indefinidamente.")
         pin_camera.value(1)
         manual_camera = True # Anula el temporizador
-        device_state = STATE_IDLE
+        device_state = STATE_SLEEP
         safe_send(sender_addr, response_message)
         return True
 
@@ -170,25 +173,26 @@ def check_and_process_incoming_messages():
         print("Comando OFF recibido. Apagando cámara.")
         pin_camera.value(0)
         manual_camera = False
-        device_state = STATE_IDLE # Volver a estado de espera
+        device_state = STATE_SLEEP 
         safe_send(sender_addr, response_message)
         return True
 
-    elif command == "TEL:REPORT":
+    elif command == "REPORT":
         print("Comando REPORT recibido.")
         battery_status = get_battery_status(as_string=True)
         report = "Estado: {}, Camara: {}, {}, Manual: {}".format(device_state, "ON" if pin_camera.value() else "OFF", battery_status, manual_camera)
         safe_send(sender_addr, "{}: {}".format(DEVICE_ID_NI, report))
-        device_state = STATE_IDLE
+        device_state = STATE_SLEEP
         return True
         
     elif command == "SENSOR:ON":
         print("Comando SENSOR:ON recibido. Encendiendo cámara por temporizador.")
         pin_camera.value(1)
         camera_on_time = time.ticks_ms()
-        device_state = STATE_IDLE
+        device_state = STATE_SLEEP
         safe_send(sender_addr, response_message)
         return True
+    
     else:
         response_message = "UNKNOWN COMMAND RECEIVED"
         safe_send(sender_addr, response_message)
@@ -202,7 +206,7 @@ def check_sensor_pins():
         
 # --- Lógica Principal (Máquina de Estados) ---
 def main():
-    global device_state, camera_on_time, xb, dog, DEVICE_ID_NI, manual_camera
+    global device_state, camera_on_time, xb, dog, DEVICE_ID_NI, manual_camera, contador_fallo_comunicacion
 
     try:
         dog = WDT(timeout=WATCHDOG_TIMEOUT_MS)
@@ -233,12 +237,12 @@ def main():
                 # Formato ID_NODO:BATERIA:DATOS
                 message = "{}:{:.2f}:Dispositivo iniciado".format(DEVICE_ID_NI, battery_voltage)
                 if safe_send_and_wait_ack(COORDINATOR_64BIT_ADDR, message):
-                    device_state = STATE_IDLE
+                    device_state = STATE_SLEEP
                 else:
                     device_state = STATE_ERROR
 
-            elif device_state == STATE_IDLE:
-                print("--- Estado: IDLE --- (Esperando sensor o reporte periódico)")
+            elif device_state == STATE_SLEEP:
+                print("--- Estado: SLEEP ---")
                 idle_start = time.ticks_ms()
                 while time.ticks_diff(time.ticks_ms(), idle_start) < SLEEP_DURATION_MS:
                     dog.feed()
@@ -251,37 +255,15 @@ def main():
                     if pin_camera.value() == 1 and not manual_camera and time.ticks_diff(time.ticks_ms(), camera_on_time) > CAMERA_ON_DURATION_MS:
                         pin_camera.value(0)
                         print("Cámara apagada por temporizador.")
-                        device_state = STATE_IDLE
+                        device_state = STATE_SLEEP
                         time.sleep_ms(50)
                 
-                if device_state == STATE_IDLE: # Si el bucle terminó sin eventos
-                    device_state = STATE_REPORT_BATTERY
-                
-            elif device_state == STATE_REPORT_BATTERY:
-                print("--- Estado: REPORT_BATTERY ---")
-                # Obtener el valor numérico de la batería
-                battery_voltage = get_battery_status(as_string=False)
-                
-                # Crear el mensaje de estado como parte de DATOS, usando comas en vez de dos puntos
-                status_data = "Estado={}, Camara={}, Manual={}".format(
-                    device_state, 
-                    "ON" if pin_camera.value() else "OFF", 
-                    manual_camera
-                )
-                
-                # Formato esperado por el coordinador: ID_NODO:BATERIA:DATOS
-                message = "{}:{:.2f}:{}".format(DEVICE_ID_NI, battery_voltage, status_data)
-                
-                if not safe_send_and_wait_ack(COORDINATOR_64BIT_ADDR, message):
-                    device_state = STATE_ERROR
-                else:
-                    device_state = STATE_IDLE
 
             elif device_state == STATE_SENSOR_TRIGGERED:
                 print("--- Estado: SENSOR_TRIGGERED ---")
                 pin_camera.value(1)
                 camera_on_time = time.ticks_ms()
-                device_state = STATE_IDLE
+                device_state = STATE_SLEEP
 
             elif device_state == STATE_ERROR:
                 print("--- Estado: ERROR ---")
