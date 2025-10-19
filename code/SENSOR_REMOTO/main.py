@@ -19,11 +19,14 @@ DEVICE_ID_NI = "NONE"
 
 # Periodos de tiempo (en milisegundos)
 SLEEP_DURATION_MS = 100                     # Tiempo de espera en modo sleep       
-RETRY_DELAY_MS = 3000                       # Tiempo de espera entre reintentos de envio     
+RETRY_DELAY_MS = 100                        # Tiempo de espera entre reintentos de envio
+HEARING_INTERVAL_MS = 3000                  # Tiempo escuchando ACK tras envio
 WATCHDOG_TIMEOUT_MS = 120000                # Tiempo de timeout del watchdog
 STATE_ERROR_SLEEP_MS = 5000                 # Segundos en estado de error
-DEBOUNCE_TIME_MS = 30000                    # Tiempo de debounce para notificaciones del sensor
+DEBOUNCE_BOTTON_TIME_MS = 4000              # Tiempo para resetear último comando tras inactividad
+DEBOUNCE_SENSOR_TIME_MS = 30000             # Tiempo de debounce para notificaciones del sensor
 CHECK_SENSOR_INTERVAL_MS = 1000             # Intervalo para comprobar el estado del sensor una vez activado
+CAMERA_ON_DURATION_MS = 60000               # Duración en ms que la cámara permanece encendida tras activación por sensor
 
 # --- Pines ---
 pin_sensor_1 = Pin('D0', Pin.IN, Pin.PULL_UP)
@@ -128,7 +131,7 @@ def safe_send_and_wait_ack(target_addr, message, retries=3):
             # Esperar feedback
             start_wait = time.ticks_ms()
             
-            while time.ticks_diff(time.ticks_ms(), start_wait) < (RETRY_DELAY_MS):
+            while time.ticks_diff(time.ticks_ms(), start_wait) < (HEARING_INTERVAL_MS):
                 dog.feed()
                 received_msg = xbee.receive()
                 if received_msg and received_msg['sender_eui64'] == target_addr:
@@ -136,7 +139,7 @@ def safe_send_and_wait_ack(target_addr, message, retries=3):
                     print("Recibido: '{}'".format(payload))
                     respuesta_recibida = True
                     return True
-                time.sleep_ms(10)
+                time.sleep_ms(100)
             if not respuesta_recibida:
                 print("No se recibió confirmacion en el tiempo esperado.")
 
@@ -223,10 +226,11 @@ def main():
         print("XBee NI: {}".format(xbee.atcmd('NI')))
         print("Perfil: SENSOR REMOTO")
         DEVICE_ID_NI = xbee.atcmd('NI') or DEVICE_ID
+        time.sleep_ms(5000) # Esperar para estabilizar
     except Exception as e:
         print("Error critico en inicializacion: {}".format(e))
         device_state = STATE_ERROR
-
+    
     while True:
         
         dog.feed()
@@ -286,7 +290,6 @@ def main():
                 else:
                     # El sensor ya no está activado, volver a dormir
                     print("Sensor ya no activado, volviendo a modo SLEEP")
-                    last_sensor_notification_time = current_time
                     device_state = STATE_SLEEP
 
             elif device_state == STATE_ERROR:

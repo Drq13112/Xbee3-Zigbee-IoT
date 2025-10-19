@@ -4,7 +4,6 @@ from machine import Pin, WDT, ADC
 import machine
 import time
 import xbee
-import tools
 
 # --- Configuración ---
 # Objetivo para reportes periódicos y de estado
@@ -16,7 +15,8 @@ DEVICE_ID_NI = "NONE"
 
 # Periodos de tiempo (en milisegundos)
 SLEEP_DURATION_MS = 100                     # Tiempo de espera en modo sleep       
-RETRY_DELAY_MS = 3000                       # Tiempo de espera entre reintentos de envio     
+RETRY_DELAY_MS = 1000                        # Tiempo de espera entre reintentos de envio
+HEARING_INTERVAL_MS = 2000                  # Tiempo escuchando ACK tras envio  
 WATCHDOG_TIMEOUT_MS = 120000                # Tiempo de timeout del watchdog
 STATE_ERROR_SLEEP_MS = 5000                 # Segundos en estado de error
 DEBOUNCE_TIME_MS = 30000                    # Tiempo de debounce para notificaciones del sensor
@@ -58,18 +58,25 @@ def get_battery_status(as_string=True):
     Si as_string es False, devuelve solo el valor numérico del voltaje.
     """
     try:
+        
+        # Obtener el voltaje de referencia configurado en el módulo.
         try:
             av = xbee.atcmd("AV")
         except KeyError:
-            av = None
+            av = None # Por defecto para algunos módulos como el Cellular.
         reference_v = AV_VALUES[av]
+
+        # Leer el valor crudo del ADC (0-4095).
         adc_raw_value = adc_battery.read()
+        
+        # Calcular el voltaje en el pin.
         pin_voltage = (adc_raw_value / 4095.0) * reference_v
-        print("ADC Raw: {}, RefV: {}, PinV: {:.2f}V".format(adc_raw_value, reference_v, pin_voltage))
+        
+        # Aplicar el factor de escala del divisor de voltaje (12V / 3.3V).
         battery_voltage = pin_voltage * (12.0 / 3.3) * 2.9 # Factor de corrección para divisor 12k+3.3k
-        print("Voltaje Bateria: {:.2f}V".format(battery_voltage))
         
         if as_string:
+            # Formatear el resultado a dos decimales.
             return "Bateria: {:.2f}V".format(battery_voltage)
         else:
             return battery_voltage
@@ -117,7 +124,7 @@ def safe_send_and_wait_ack(target_addr, message, retries=3):
             # Esperar feedback
             start_wait = time.ticks_ms()
             
-            while time.ticks_diff(time.ticks_ms(), start_wait) < (RETRY_DELAY_MS):
+            while time.ticks_diff(time.ticks_ms(), start_wait) < (HEARING_INTERVAL_MS):
                 dog.feed()
                 received_msg = xbee.receive()
                 if received_msg and received_msg['sender_eui64'] == target_addr:
@@ -125,7 +132,7 @@ def safe_send_and_wait_ack(target_addr, message, retries=3):
                     print("Recibido: '{}'".format(payload))
                     respuesta_recibida = True
                     return True
-                time.sleep_ms(10)
+                time.sleep_ms(100)
             if not respuesta_recibida:
                 print("No se recibió confirmacion en el tiempo esperado.")
 
@@ -215,7 +222,7 @@ def main():
         print("XBee y Watchdog inicializados.")
         print("XBee NI: {}".format(xbee.atcmd('NI')))
         print( "Perfil: CAMARA")
-        DEVICE_ID_NI = xbee.atcmd('NI') or DEVICE_ID
+        DEVICE_ID_NI = xbee.atcmd('NI') or DEVICE_IDtime.sleep_ms(5000) # Esperar para estabilizar
     except Exception as e:
         print("Error critico en inicializacion: {}".format(e))
         while True:

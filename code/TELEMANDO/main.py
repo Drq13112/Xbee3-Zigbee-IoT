@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import sys
-from code.Camara.main import check_and_process_incoming_messages
 from machine import Pin, WDT, ADC
 import machine
 import time
@@ -20,7 +19,8 @@ DEVICE_ID_NI = "NONE"
 
 # Periodos de tiempo (en milisegundos)
 SLEEP_DURATION_MS = 100                     # Tiempo de espera en modo sleep       
-RETRY_DELAY_MS = 3000                       # Tiempo de espera entre reintentos de envio     
+RETRY_DELAY_MS = 100                        # Tiempo de espera entre reintentos de envio
+HEARING_INTERVAL_MS = 3000                  # Tiempo escuchando ACK tras envio
 WATCHDOG_TIMEOUT_MS = 120000                # Tiempo de timeout del watchdog
 STATE_ERROR_SLEEP_MS = 5000                 # Segundos en estado de error
 DEBOUNCE_BOTTON_TIME_MS = 4000              # Tiempo para resetear último comando tras inactividad
@@ -102,6 +102,7 @@ def safe_send(target_addr, message, retries=3):
             else:
                 print("Fallo al enviar mensaje tras varios reintentos.")
                 return False
+    print("Mensaje enviado correctamente.")
     return True
 
 def safe_send_and_wait_ack(target_addr, message, retries=3):
@@ -119,7 +120,7 @@ def safe_send_and_wait_ack(target_addr, message, retries=3):
             # Esperar feedback
             start_wait = time.ticks_ms()
             
-            while time.ticks_diff(time.ticks_ms(), start_wait) < (RETRY_DELAY_MS):
+            while time.ticks_diff(time.ticks_ms(), start_wait) < (HEARING_INTERVAL_MS):
                 dog.feed()
                 received_msg = xbee.receive()
                 if received_msg and received_msg['sender_eui64'] == target_addr:
@@ -127,7 +128,7 @@ def safe_send_and_wait_ack(target_addr, message, retries=3):
                     print("Recibido: '{}'".format(payload))
                     respuesta_recibida = True
                     return True
-                time.sleep_ms(10)
+                time.sleep_ms(100)
             if not respuesta_recibida:
                 print("No se recibió confirmacion en el tiempo esperado.")
 
@@ -147,7 +148,7 @@ def check_and_process_incoming_messages():
     """
     Procesa los mensajes entrantes y responde cuando sea necesario.
     """
-    global device_state, contador_fallo_comunicacion
+    global device_state, contador_sensor
     
     received_msg = xbee.receive()
     if not received_msg:
@@ -182,6 +183,7 @@ def main():
         print("XBee NI: {}".format(xbee.atcmd('NI')))
         print( "Perfil: TELEMANDO")
         DEVICE_ID_NI = xbee.atcmd('NI') or DEVICE_ID
+        time.sleep_ms(5000) # Esperar para estabilizar
     except Exception as e:
         print("Error critico en inicializacion: {}".format(e))
         while True:
