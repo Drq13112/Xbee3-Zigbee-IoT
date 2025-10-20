@@ -15,7 +15,7 @@ DEVICE_ID_NI = "NONE"
 
 # Periodos de tiempo (en milisegundos)
 SLEEP_DURATION_MS = 100                     # Tiempo de espera en modo sleep       
-RETRY_DELAY_MS = 1000                        # Tiempo de espera entre reintentos de envio
+RETRY_DELAY_MS = 1000                       # Tiempo de espera entre reintentos de envio
 HEARING_INTERVAL_MS = 2000                  # Tiempo escuchando ACK tras envio  
 WATCHDOG_TIMEOUT_MS = 120000                # Tiempo de timeout del watchdog
 STATE_ERROR_SLEEP_MS = 5000                 # Segundos en estado de error
@@ -37,7 +37,6 @@ AV_VALUES = {0: 1.25, 1: 2.5, 2: 3.3, None: 2.5}
 # --- Estados del Dispositivo ---
 STATE_STARTUP = 0
 STATE_SLEEP = 1
-STATE_REPORT_BATTERY = 2
 STATE_SENSOR_TRIGGERED = 3
 STATE_ERROR = 4
 
@@ -46,7 +45,7 @@ device_state = STATE_STARTUP
 camera_on_time = 0
 xb = None 
 dog = None
-manual_camera = False # Flag para anular el temporizador de la cámara
+manual_camera = False                       # Flag para anular el temporizador de la cámara
 report_time = 0
 contador_fallo_comunicacion = 0
 
@@ -222,7 +221,8 @@ def main():
         print("XBee y Watchdog inicializados.")
         print("XBee NI: {}".format(xbee.atcmd('NI')))
         print( "Perfil: CAMARA")
-        DEVICE_ID_NI = xbee.atcmd('NI') or DEVICE_IDtime.sleep_ms(5000) # Esperar para estabilizar
+        DEVICE_ID_NI = xbee.atcmd('NI') or DEVICE_ID
+        time.sleep_ms(5000) # Esperar para estabilizar
     except Exception as e:
         print("Error critico en inicializacion: {}".format(e))
         while True:

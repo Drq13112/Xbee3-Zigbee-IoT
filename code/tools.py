@@ -3,21 +3,59 @@ import xbee
 from machine import ADC, Pin, WDT
 
 class XBeeDevice:
+    """Clase base para todos los perfiles de dispositivos XBee."""
     AV_VALUES = {0: 1.25, 1: 2.5, 2: 3.3, None: 2.5}
+    
+    # --- Estados del Dispositivo ---
+    STATE_STARTUP = 0                           # Estado de arranque
+    STATE_SLEEP = 1                             # Estado de sleep
+    STATE_IDLE = 2                              # Estado genérico para espera activa
+    STATE_ERROR = 3                             # Estado de error crítico
 
-    def __init__(self, device_id, wdt_timeout=60000):
+    
+    # --- Periodos de tiempo (en milisegundos) ---
+    STABILIZATION_TIME_MS = 5000                # Tiempo de estabilización tras wakeup
+    SLEEP_DURATION_MS = 100                     # Tiempo de espera en modo sleep       
+    RETRY_DELAY_MS = 100                        # Tiempo de espera entre reintentos de envio
+    HEARING_INTERVAL_MS = 3000                  # Tiempo escuchando ACK tras envio
+    WATCHDOG_TIMEOUT_MS = 120000                # Tiempo de timeout del watchdog
+    STATE_ERROR_SLEEP_MS = 5000                 # Segundos en estado de error
+    DEBOUNCE_BOTTON_TIME_MS = 4000              # Tiempo para resetear último comando tras inactividad
+    DEBOUNCE_SENSOR_TIME_MS = 30000             # Tiempo de debounce para notificaciones del sensor
+    CHECK_SENSOR_INTERVAL_MS = 1000             # Intervalo para comprobar el estado del sensor una vez activado
+    CAMERA_ON_DURATION_MS = 60000               # Duración en ms que la cámara permanece encendida tras activación por sensor
+    
+
+
+    def __init__(self, device_id="XBEE_DEVICE", wdt_timeout=60000, battery_pin='D1', battery_scaling_factor=2.9):
         self.device_id = device_id
         self.device_node_id = "NONE"
         self.wdt_timeout = wdt_timeout
-        self.adc_battery = ADC('D1')
-        self.wdt = WDT(timeout=self.wdt_timeout)
-        self.xbee = xbee.XBee()
-        self.device_state = 0  # Puede interpretarse como STATE_STARTUP
-        self.init_watchdog()
+        self.adc_battery = ADC(battery_pin)
+        self.battery_scaling_factor = battery_scaling_factor
+        self.wdt = None
+        self.xbee = None
+        self.device_state = self.STATE_STARTUP
+        self.contador_fallo_comunicacion = 0
+        self.coordinator_addr = b'\x00\x13\xA2\x00\x42\x3D\x8D\x6E' # Dirección por defecto, puede ser sobreescrita
 
-    def init_watchdog(self):
-        self.feed_watchdog()
-
+    def setup(self):
+        """Inicializa hardware como WDT y XBee. Se llama al inicio de run()."""
+        try:
+            self.wdt = WDT(timeout=self.wdt_timeout)
+            self.feed_watchdog()
+            self.xbee = xbee.XBee()
+            self.device_node_id = self.xbee.atcmd('NI') or self.device_id
+            print("--- SETUP COMPLETO ---")
+            print("Perfil: {}".format(self.__class__.__name__))
+            print("Device NI: {}".format(self.device_node_id))
+            self.xbee.sleep_ms(self.STABILIZATION_TIME_MS)  # Espera para estabilizar XBee
+            return True
+        except Exception as e:
+            print("Error critico en inicializacion: {}".format(e))
+            self.device_state = self.STATE_ERROR
+            return False
+        
     def feed_watchdog(self):
         if self.wdt:
             self.wdt.feed()
@@ -40,6 +78,9 @@ class XBeeDevice:
             return "Bateria: ERROR" if as_string else 0.0
 
     def send_message(self, target_addr, message):
+        """
+        Envía un mensaje sin esperar confirmación.
+        """
         try:
             self.xbee.transmit(target_addr, message)
             self.feed_watchdog()
@@ -48,88 +89,70 @@ class XBeeDevice:
             print("Error al enviar mensaje: {}".format(e))
             return False
 
-    def safe_send(self, target_addr, message, retries=3, delay_ms=3000):
+    def safe_send(self, target_addr, message, retries=3):
+        """
+        Envía un mensaje y no espera confirmación.
+        Reintenta hasta 'retries' veces si hay error en el envío.
+        """
+        global dog,xb,DEVICE_ID_NI
         for attempt in range(retries):
-            if self.send_message(target_addr, message):
+            try:
+                print("Enviando sin ack (intento {}/{}) '{}'".format(attempt + 1, retries, message))
+                xbee.transmit(target_addr, message)
+                dog.feed()
+                time.sleep_ms(100)
                 return True
-            print("Reintentando en {} ms...".format(delay_ms))
-            time.sleep_ms(delay_ms)
-        print("Fallo al enviar mensaje tras {} reintentos.".format(retries))
-        return False
+            except Exception as e:
+                dog.feed()
+                print("Error al transmitir/recibir: {}".format(e))
+                if attempt < retries - 1:
+                    print("Reintentando en {} segundos...".format(self.RETRY_DELAY_MS / 1000))
+                    time.sleep_ms(self.RETRY_DELAY_MS)
+                else:
+                    print("Fallo al enviar mensaje tras varios reintentos.")
+                    return False
+        print("Mensaje enviado correctamente.")
+        return True
 
-    def safe_send_and_wait_ack(self, target_addr, message, retries=3, delay_ms=3000):
+    def safe_send_and_wait_ack(self, target_addr, message, retries=3):
+        """
+        Envía un mensaje y espera un ACK del destinatario.
+        Reintenta hasta 'retries' veces si no recibe confirmación.
+        """
+        global dog,xb,DEVICE_ID_NI
+        respuesta_recibida = False
         for attempt in range(retries):
-            if self.send_message(target_addr, message):
+            try:
+                print("Enviando con ACK (intento {}/{}) '{}'".format(attempt + 1, retries, message))
+                xbee.transmit(target_addr, message)
+
+                # Esperar feedback
                 start_wait = time.ticks_ms()
-                while time.ticks_diff(time.ticks_ms(), start_wait) < delay_ms:
-                    self.feed_watchdog()
-                    received_msg = self.xbee.receive()
-                    if received_msg and received_msg.get('sender_eui64') == target_addr:
+
+                while time.ticks_diff(time.ticks_ms(), start_wait) < (self.HEARING_INTERVAL_MS):
+                    dog.feed()
+                    received_msg = xbee.receive()
+                    if received_msg and received_msg['sender_eui64'] == target_addr:
+                        payload = received_msg['payload'].decode('utf-8')
+                        print("Recibido: '{}'".format(payload))
+                        respuesta_recibida = True
                         return True
-                    time.sleep_ms(10)
-            print("No se recibió ACK, reintentando...")
-            time.sleep_ms(delay_ms)
-        print("Fallo al enviar mensaje con ACK tras {} intentos.".format(retries))
+                    time.sleep_ms(100)
+                if not respuesta_recibida:
+                    print("No se recibió confirmacion en el tiempo esperado.")
+
+            except Exception as e:
+                dog.feed()
+                print("Error al transmitir/recibir: {}".format(e))
+
+            if attempt < retries - 1:
+                dog.feed()
+                print("Reintentando en {} segundos...".format(self.RETRY_DELAY_MS / 1000))
+                time.sleep_ms(self.RETRY_DELAY_MS)
+
+        print("Fallo al enviar y confirmar mensaje tras varios reintentos.")
         return False
-
-#--------------------------------------------------------
-# Clase especializada para el perfil de Coordinador (Sin sleep)
-#--------------------------------------------------------
-class Coordinator(XBeeDevice):
-    def __init__(self, device_id="XBEE_COOR", **kwargs):
-        super().__init__(device_id, **kwargs)
-        self.device_database = {}
-
-    def parse_payload(self, payload_bytes):
-        try:
-            payload_str = payload_bytes.decode('utf-8')
-            parts = payload_str.split(':')
-            if len(parts) != 3:
-                print("Error: Formato incorrecto en payload")
-                return None, None, None
-            node_id = parts[0]
-            battery = float(parts[1])
-            data = parts[2]
-            return node_id, battery, data
-        except Exception as e:
-            print("Error al parsear payload: {}".format(e))
-            return None, None, None
-
-    def update_device_database(self, sender_eui64, node_id, battery):
-        current_time = time.ticks_ms()
-        if sender_eui64 not in self.device_database:
-            self.device_database[sender_eui64] = {
-                'node_id': node_id,
-                'battery': battery,
-                'last_report_time': current_time,
-                'movement_count': 1
-            }
-            print("Nuevo dispositivo registrado: {}".format(node_id))
-        else:
-            db_entry = self.device_database[sender_eui64]
-            db_entry['node_id'] = node_id
-            db_entry['battery'] = battery
-            db_entry['last_report_time'] = current_time
-            db_entry['movement_count'] += 1
-            print("Dispositivo actualizado: {}".format(node_id))
-
-    def send_feedback(self, recipient_eui64, payload):
-        try:
-            print("Enviando feedback a {}".format(''.join('{:02x}'.format(b) for b in recipient_eui64)))
-            self.xbee.transmit(recipient_eui64, payload)
-            print("Feedback enviado con éxito.")
-        except Exception as e:
-            print("Error enviando feedback: {}".format(e))
-
-#--------------------------------------------------------
-# Clase especializada para el perfil de Cámara (Sin sleep)
-#--------------------------------------------------------
-class Camera(XBeeDevice):
-    def __init__(self, device_id="XBEE_CAM", camera_pin='D12', **kwargs):
-        super().__init__(device_id, **kwargs)
-        self.pin_camera = Pin(camera_pin, Pin.OUT, value=0)
-        self.manual_mode = False
-
+    
     def turn_on_camera(self):
         self.pin_camera.value(1)
         print("Cámara encendida.")
@@ -137,108 +160,21 @@ class Camera(XBeeDevice):
     def turn_off_camera(self):
         self.pin_camera.value(0)
         print("Cámara apagada.")
-
-    def process_command(self, command, sender_addr):
-        response_message = "{}:OK".format(command)
-        if command == "TEL:ON":
-            self.turn_on_camera()
-            self.manual_mode = True
-        elif command == "TEL:OFF":
-            self.turn_off_camera()
-            self.manual_mode = False
-        elif command == "REPORT":
-            battery_status = self.get_battery_status(as_string=True)
-            report = "Estado: {}, Cámara: {}, {}".format(
-                self.device_state, "ON" if self.pin_camera.value() else "OFF", battery_status)
-            response_message = "{}: {}".format(self.device_node_id, report)
-        elif command == "SENSOR:ON":
-            self.turn_on_camera()
-        else:
-            response_message = "UNKNOWN COMMAND RECEIVED"
-        self.safe_send(sender_addr, response_message)
-
-#--------------------------------------------------------
-# Clase especializada para el perfil de Telemando (Sin sleep)
-#--------------------------------------------------------
-class Telemand(XBeeDevice):
-
-    def __init__(self, device_id="XBEE_TELEMANDO", camera_addr=None, debounce_btn_ms=4000, **kwargs):
-        super().__init__(device_id, **kwargs)
-        self.camera_addr = camera_addr
-        self.debounce_btn_ms = debounce_btn_ms
         
-        self.pin_cmd_on = Pin('D3', Pin.IN, Pin.PULL_UP)
-        self.pin_cmd_off = Pin('D4', Pin.IN, Pin.PULL_UP)
-        self.pin_report_req = Pin('D2', Pin.IN, Pin.PULL_UP)
-        
-        self.last_press_time = 0
-        self.last_command_code = 0 # 1:ON, 2:OFF, 3:REPORT
-        self.command_to_send = ""
-        self.communication_failures = 0
-        
-    def check_buttons(self):
-        current_time = time.ticks_ms()
-        if time.ticks_diff(current_time, self.last_press_time) > self.debounce_btn_ms:
-            self.last_command_code = 0
-
-        if time.ticks_diff(current_time, self.last_press_time) > 1000: # Evitar rebotes rápidos
-            if self.pin_cmd_on.value() == 0 and self.last_command_code != 1:
-                return "TEL:ON", 1
-            if self.pin_cmd_off.value() == 0 and self.last_command_code != 2:
-                return "TEL:OFF", 2
-            if self.pin_report_req.value() == 0 and self.last_command_code != 3:
-                return "REPORT", 3
-        return None, 0
-        
-
-#--------------------------------------------------------
-# Clase especializada para el perfil de Router (Sin sleep)
-#--------------------------------------------------------
-class Router(XBeeDevice):
-    def __init__(self, device_id="XBEE_ROUTER", **kwargs):
-        super().__init__(device_id, **kwargs)
-        
-
-#--------------------------------------------------------
-# Clase especializada para el perfil de Sensor Remoto (Con sleep o sin sleep)
-#--------------------------------------------------------
-class RemoteSensor(XBeeDevice):
-    STATE_SENSOR_TRIGGERED = 5
-
-    def __init__(self, device_id="XBEE_SENSOR", camera_addr=None, debounce_ms=30000, **kwargs):
-        super().__init__(device_id, **kwargs)
-        self.camera_addr = camera_addr
-        self.debounce_ms = debounce_ms
-        self.sensor_pin = Pin('D8', Pin.IN, Pin.PULL_UP)
-        self.last_notification_time = 0
-        self.communication_failures = 0
-
-    def check_incoming_messages(self):
-        msg = self.xbee.receive()
-        if msg:
-            sender = msg['sender_eui64']
-            payload = msg['payload'].decode('utf-8').strip()
-            print("Mensaje recibido: '{}' de {}".format(payload, ''.join('{:02x}'.format(b) for b in sender)))
-            if payload == "REPORT":
-                battery = self.get_battery_status(as_string=False)
-                response = "{}:{:.2f}:Failures={}".format(self.device_node_id, battery, self.communication_failures)
-                self.safe_send(sender, response)
-    
-    
-#--------------------------------------------------------
-# Clase especializada para el perfil End Device con accionamiento de camara (Con sleep o sin sleep)
-#--------------------------------------------------------
-
-class EndDeviceCamera(XBeeDevice):
-    def __init__(self, device_id="XBEE_ENDCAM", sleep_mode=True, camera_pin='D12', **kwargs):
-        super().__init__(device_id, **kwargs)
-        self.sleep_mode = sleep_mode
-        self.pin_camera = Pin(camera_pin, Pin.OUT, value=0)
-
-    def turn_on_camera(self):
-        self.pin_camera.value(1)
-        print("Cámara encendida.")
-
-    def turn_off_camera(self):
-        self.pin_camera.value(0)
-        print("Cámara apagada.")
+    def check_received_messages(self):
+        """
+        Revisa si han llegado mensajes y los devuelve.
+        """
+        try:
+            received_msg = self.xbee.receive()
+            self.feed_watchdog()
+            if received_msg:
+                payload = received_msg['payload'].decode('utf-8')
+                sender = received_msg['sender_eui64']
+                print("Mensaje recibido de {}: '{}'".format(sender, payload))
+                return sender, payload
+            return None, None
+        except Exception as e:
+            self.feed_watchdog()
+            print("Error al recibir mensaje: {}".format(e))
+            return None, None
