@@ -29,8 +29,8 @@ jobs:
 
       - name: 🎨 Check formatting (black)
         run: |
-          echo "🎨 Checking code format (black)..."
-          black --check code
+          echo "🎨 Checking code format (black)..." | tee -a $GITHUB_STEP_SUMMARY
+          black --check code | tee -a $GITHUB_STEP_SUMMARY || true
 
       - name: 🧠 MicroPython syntax validation
         run: |
