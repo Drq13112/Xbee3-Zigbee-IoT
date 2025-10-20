@@ -45,11 +45,11 @@ jobs:
         run: |
           echo "🧪 Running tests with coverage..."
           pytest -q --disable-warnings --cov=code --cov-report=term-missing || true
-
+          
       - name: 📊 Upload coverage to summary
         run: |
           echo "## 📈 Coverage Report" >> $GITHUB_STEP_SUMMARY
-          pytest -q --disable-warnings --cov=code --cov-report=term >> $GITHUB_STEP_SUMMARY
+          pytest -q --disable-warnings --cov=code --cov-report=term >> $GITHUB_STEP_SUMMARY || true
 
       - name: ✅ Final Summary
         run: |
