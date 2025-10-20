@@ -1,0 +1,55 @@
+name: XBee Firmware Quality Check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality_check:
+    name: 🧠 Lint, Syntax & Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧩 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 📦 Install dependencies
+        run: |
+          pip install flake8 black pytest pytest-cov micropython-tool mock
+
+      - name: 🧹 Lint code style (flake8)
+        run: |
+          echo "🔍 Checking for style and syntax issues..."
+          flake8 src --max-line-length=120 --ignore=E402,E501,W503
+
+      - name: 🎨 Check formatting (black)
+        run: |
+          echo "🎨 Checking code format (black)..."
+          black --check src
+
+      - name: 🧠 MicroPython syntax validation
+        run: |
+          echo "🧠 Checking syntax compatibility..."
+          for f in $(find src -name "*.py"); do
+            micropython -m py_compile $f
+          done
+
+      - name: 🧪 Run unit tests with coverage
+        run: |
+          echo "🧪 Running tests with coverage..."
+          pytest -q --disable-warnings --cov=src --cov-report=term-missing || true
+
+      - name: 📊 Upload coverage to summary
+        run: |
+          echo "## 📈 Coverage Report" >> $GITHUB_STEP_SUMMARY
+          pytest -q --disable-warnings --cov=src --cov-report=term >> $GITHUB_STEP_SUMMARY
+
+      - name: ✅ Final Summary
+        run: |
+          echo "### ✅ Pipeline finished successfully" >> $GITHUB_STEP_SUMMARY
+          echo "All checks completed for $GITHUB_REPOSITORY" >> $GITHUB_STEP_SUMMARY
