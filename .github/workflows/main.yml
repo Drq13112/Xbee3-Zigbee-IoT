@@ -20,7 +20,7 @@ jobs:
 
       - name: 📦 Install dependencies
         run: |
-          pip install flake8 black pytest pytest-cov micropython-tool mock
+          pip install flake8 black pytest pytest-cov mock mpremote
 
       - name: 🧹 Lint code style (flake8)
         run: |
