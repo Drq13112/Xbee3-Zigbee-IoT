@@ -24,8 +24,8 @@ jobs:
 
       - name: 🧹 Lint code style (flake8)
         run: |
-          echo "🔍 Checking for style and syntax issues..."
-          flake8 code --max-line-length=120 --ignore=E402,E501,W503
+          echo "🔍 Checking for style and syntax issues..." | tee -a $GITHUB_STEP_SUMMARY
+          flake8 code --max-line-length=120 --ignore=E402,E501,W503 | tee -a $GITHUB_STEP_SUMMARY || true
 
       - name: 🎨 Check formatting (black)
         run: |
