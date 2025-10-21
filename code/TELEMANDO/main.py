@@ -32,7 +32,6 @@ class Telemando(XBeeDevice):
         self.last_press_time = 0
         self.command_to_send = ""
         self.last_command = 0
-        self.contador_sensor = 0
 
     def check_and_process_incoming_messages(self):
         """
@@ -49,7 +48,7 @@ class Telemando(XBeeDevice):
         if payload == "REPORT":
             print("Solicitud de reporte recibida, enviando respuesta...")
             battery_voltage = self.get_battery_status(as_string=False)
-            status_data = "Contador={}".format(self.contador_sensor)
+            status_data = "Contador={}".format(self.contador_fallo_comunicacion)
             response = "{}:{:.2f}:{}".format(self.device_node_id, battery_voltage, status_data)
             self.safe_send(sender, response)
             return True
@@ -69,13 +68,13 @@ class Telemando(XBeeDevice):
                     battery_voltage = self.get_battery_status(as_string=False)
                     message = "{}:{:.2f}:Dispositivo iniciado.".format(self.device_node_id, battery_voltage)
                     if self.safe_send_and_wait_ack(self.coordinator_addr, message):
-                        self.device_state = self.STATE_SLEEP
+                        self.device_state = self.STATE_IDLE
                     else:
                         print("No se pudo contactar al coordinador en el arranque.")
                         self.device_state = self.STATE_ERROR
                 
-                elif self.device_state == self.STATE_SLEEP:
-                    print("--- Estado: SLEEP --- (Esperando comandos)")
+                elif self.device_state == self.STATE_IDLE:
+                    print("--- Estado: SLEEP ---")
                     
                     while True:
                         self.feed_watchdog()
@@ -115,9 +114,9 @@ class Telemando(XBeeDevice):
                     self.last_press_time = time.ticks_ms()
                     message = self.command_to_send
                     if not self.safe_send_and_wait_ack(self.camera_addr, message):
-                        self.contador_sensor += 1
-                        print("Fallo al notificar al dispositivo cámara. Contador de fallos: {}".format(self.contador_sensor))
-                    self.device_state = self.STATE_SLEEP
+                        self.contador_fallo_comunicacion += 1
+                        print("Fallo al notificar al dispositivo cámara. Contador de fallos: {}".format(self.contador_fallo_comunicacion))
+                    self.device_state = self.STATE_IDLE
                     self.command_to_send = ""
                 
                 elif self.device_state == self.STATE_ERROR:
