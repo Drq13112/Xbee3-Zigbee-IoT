@@ -24,7 +24,8 @@ class XBeeDevice:
     DEBOUNCE_SENSOR_TIME_MS = 30000             # Tiempo de debounce para notificaciones del sensor
     CHECK_SENSOR_INTERVAL_MS = 1000             # Intervalo para comprobar el estado del sensor una vez activado
     CAMERA_ON_DURATION_MS = 60000               # Duración en ms que la cámara permanece encendida tras activación por sensor
-    DEEP_SLEEP_DURATION_MS = 86400000             # Duración del deep sleep en ms (24 Horas = 86400000 ms)
+    DEEP_SLEEP_DURATION_MS = 86400000            # Duración del deep sleep en ms (24 Horas = 86400000 ms)
+    COORDINATOR_RETRY_INTERVAL_MS = 43200000   # Intervalo para reintentos al coordinador (12 horas)
 
 
     def __init__(self, device_id="XBEE_DEVICE", wdt_timeout=60000, battery_pin='D1', battery_scaling_factor=2.9, pin_camera='D12'):
@@ -205,7 +206,7 @@ class XBeeDevice:
         """
         if self.coordinator_retry_active:
             current_time = time.ticks_ms()
-            if time.ticks_diff(current_time, self.last_coordinator_retry_time) >= self.coordinator_retry_interval:
+            if time.ticks_diff(current_time, self.last_coordinator_retry_time) >= self.COORDINATOR_RETRY_INTERVAL_MS:
                 battery_voltage = self.get_battery_status(as_string=False)
                 message = "{}:{:.2f}:Reporte de reintento.".format(self.device_node_id, battery_voltage)
                 print("Enviando reporte de reintento al coordinador...")
