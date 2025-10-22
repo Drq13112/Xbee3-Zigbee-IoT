@@ -31,7 +31,6 @@ class EndDevice(XBeeDevice):
         self.camera_remote = True  # Usar cámara remota
         self.last_sensor_notification_time = 0
         
-
     def check_pins_sensor(self):
         self.feed_watchdog()
         if (self.pin_sensor_1.value() != 0 or self.pin_sensor_2.value() != 0 or
@@ -53,7 +52,6 @@ class EndDevice(XBeeDevice):
         
         while True:
             self.feed_watchdog()
-            
             try:
                 
                 # --- Máquina de Estados ---
@@ -102,11 +100,12 @@ class EndDevice(XBeeDevice):
                     message = "{}:{:.2f}:Reporte periodico.".format(self.device_node_id, battery_voltage)
                     if not self.safe_send_and_wait_ack(self.coordinator_addr, message):
                         self.contador_fallo_comunicacion += 1
+                    else:
+                        self.contador_fallo_comunicacion = 0
                     if self.deep_sleep:
                         self.device_state = self.STATE_SLEEP
                     else:
                         self.device_state = self.STATE_IDLE
-
 
                 elif self.device_state == self.STATE_SENSOR_TRIGGERED:
                     print("--- Estado: SENSOR_TRIGGERED ---")
@@ -148,7 +147,7 @@ class EndDevice(XBeeDevice):
                     time.sleep_ms(self.STATE_ERROR_SLEEP_MS)
                     self.feed_watchdog()
                     self.device_state = self.STATE_STARTUP
-            
+                
             except Exception as e:
                 self.feed_watchdog()
                 print("Error inesperado en el bucle principal: {}".format(e))

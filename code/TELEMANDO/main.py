@@ -61,7 +61,6 @@ class Telemando(XBeeDevice):
 
         while True:
             self.feed_watchdog()
-            
             try:
                 # --- Máquina de Estados ---
                 if self.device_state == self.STATE_STARTUP:
@@ -118,6 +117,8 @@ class Telemando(XBeeDevice):
                     if not self.safe_send_and_wait_ack(self.camera_addr, message):
                         self.contador_fallo_comunicacion += 1
                         print("Fallo al notificar al dispositivo cámara. Contador de fallos: {}".format(self.contador_fallo_comunicacion))
+                    else:
+                        self.contador_fallo_comunicacion = 0
                     self.device_state = self.STATE_IDLE
                     self.command_to_send = ""
                 
@@ -127,7 +128,9 @@ class Telemando(XBeeDevice):
                     print("Intentando reiniciar en {} segundos...".format(self.STATE_ERROR_SLEEP_MS / 1000))
                     time.sleep_ms(self.STATE_ERROR_SLEEP_MS)
                     self.device_state = self.STATE_STARTUP
-            
+                
+                self.check_coordinator_retry() 
+                
             except Exception as e:
                 self.feed_watchdog()
                 print("Error inesperado en el bucle principal: {}".format(e))

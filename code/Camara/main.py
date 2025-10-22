@@ -58,6 +58,8 @@ class Camara(XBeeDevice):
             battery_status = self.get_battery_status(as_string=True)
             report = "Estado: {}, Camara: {}, {}, Manual: {}".format(self.device_state, "ON" if self.pin_camera.value() else "OFF", battery_status, self.manual_camera)
             self.safe_send(sender, "{}: {}".format(self.device_node_id, report))
+            if sender == self.coordinator_addr:
+                self.contador_fallo_comunicacion = 0
             self.device_state = self.STATE_SLEEP
             return True
             
@@ -133,7 +135,9 @@ class Camara(XBeeDevice):
                     print("Intentando reiniciar en {} segundos...".format(self.STATE_ERROR_SLEEP_MS / 1000))
                     time.sleep_ms(self.STATE_ERROR_SLEEP_MS)
                     self.device_state = self.STATE_STARTUP
-            
+
+                self.check_coordinator_retry() # Background check for coordinator retries
+                
             except Exception as e:
                 self.feed_watchdog()
                 print("Error inesperado en el bucle principal: {}".format(e))

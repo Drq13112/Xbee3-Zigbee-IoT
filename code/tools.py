@@ -104,6 +104,7 @@ class XBeeDevice:
         except Exception as e:
             self.feed_watchdog()
             print("Error al enviar mensaje: {}".format(e))
+            self.contador_fallo_comunicacion += 1
             return False
 
     def safe_send(self, target_addr, message, retries=3):
@@ -115,7 +116,7 @@ class XBeeDevice:
         for attempt in range(retries):
             try:
                 print("Enviando sin ack (intento {}/{}) '{}'".format(attempt + 1, retries, message))
-                xbee.transmit(target_addr, message)
+                self.xbee.transmit(target_addr, message)
                 self.feed_watchdog()
                 time.sleep_ms(100)
                 return True
@@ -127,6 +128,11 @@ class XBeeDevice:
                     time.sleep_ms(self.RETRY_DELAY_MS)
                 else:
                     print("Fallo al enviar mensaje tras varios reintentos.")
+                    self.contador_fallo_comunicacion += 1
+                    if target_addr == self.coordinator_addr and not self.coordinator_retry_active:
+                        self.coordinator_retry_active = True
+                        self.last_coordinator_retry_time = time.ticks_ms()
+                        print("Activando reintentos periódicos al coordinador cada 12 horas.")
                     return False
         print("Mensaje enviado correctamente.")
         return True
@@ -141,14 +147,14 @@ class XBeeDevice:
         for attempt in range(retries):
             try:
                 print("Enviando con ACK (intento {}/{}) '{}'".format(attempt + 1, retries, message))
-                xbee.transmit(target_addr, message)
+                self.xbee.transmit(target_addr, message)
 
                 # Esperar feedback
                 start_wait = time.ticks_ms()
 
                 while time.ticks_diff(time.ticks_ms(), start_wait) < (self.HEARING_INTERVAL_MS):
                     self.feed_watchdog()
-                    received_msg = xbee.receive()
+                    received_msg = self.xbee.receive()
                     if received_msg and received_msg['sender_eui64'] == target_addr:
                         payload = received_msg['payload'].decode('utf-8')
                         print("Recibido: '{}'".format(payload))
@@ -166,8 +172,12 @@ class XBeeDevice:
                 self.feed_watchdog()
                 print("Reintentando en {} segundos...".format(self.RETRY_DELAY_MS / 1000))
                 time.sleep_ms(self.RETRY_DELAY_MS)
-
+        self.contador_fallo_comunicacion += 1
         print("Fallo al enviar y confirmar mensaje tras varios reintentos.")
+        if target_addr == self.coordinator_addr and not self.coordinator_retry_active:
+            self.coordinator_retry_active = True
+            self.last_coordinator_retry_time = time.ticks_ms()
+            print("Activando reintentos periódicos al coordinador cada 12 horas.")
         return False
     
     def check_received_messages(self):
@@ -187,4 +197,22 @@ class XBeeDevice:
             self.feed_watchdog()
             print("Error al recibir mensaje: {}".format(e))
             return None, None
-        
+
+    def check_coordinator_retry(self):
+        """
+        Background check for coordinator retries. Call this in the main loop of subclasses.
+        Sends a report every 12 hours if retries are active, until success.
+        """
+        if self.coordinator_retry_active:
+            current_time = time.ticks_ms()
+            if time.ticks_diff(current_time, self.last_coordinator_retry_time) >= self.coordinator_retry_interval:
+                battery_voltage = self.get_battery_status(as_string=False)
+                message = "{}:{:.2f}:Reporte de reintento.".format(self.device_node_id, battery_voltage)
+                print("Enviando reporte de reintento al coordinador...")
+                if self.safe_send_and_wait_ack(self.coordinator_addr, message):
+                    self.coordinator_retry_active = False
+                    self.contador_fallo_comunicacion = 0  # Reset on success
+                    print("Reintento exitoso: desactivando reintentos periódicos.")
+                else:
+                    self.last_coordinator_retry_time = current_time
+                    print("Reintento fallido: programando siguiente en 12 horas.")
