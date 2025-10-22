@@ -19,14 +19,12 @@ DEVICE_ID_NI = "NONE"
 
 # Periodos de tiempo (en milisegundos)
 SLEEP_DURATION_MS = 100                     # Tiempo de espera en modo sleep       
-RETRY_DELAY_MS = 100                        # Tiempo de espera entre reintentos de envio
-HEARING_INTERVAL_MS = 3000                  # Tiempo escuchando ACK tras envio
+RETRY_DELAY_MS = 1000                        # Tiempo de espera entre reintentos de envio
+HEARING_INTERVAL_MS = 2000                  # Tiempo escuchando ACK tras envio  
 WATCHDOG_TIMEOUT_MS = 120000                # Tiempo de timeout del watchdog
 STATE_ERROR_SLEEP_MS = 5000                 # Segundos en estado de error
-DEBOUNCE_BOTTON_TIME_MS = 4000              # Tiempo para resetear último comando tras inactividad
-DEBOUNCE_SENSOR_TIME_MS = 30000             # Tiempo de debounce para notificaciones del sensor
+DEBOUNCE_TIME_MS = 30000                    # Tiempo de debounce para notificaciones del sensor
 CHECK_SENSOR_INTERVAL_MS = 1000             # Intervalo para comprobar el estado del sensor una vez activado
-CAMERA_ON_DURATION_MS = 60000               # Duración en ms que la cámara permanece encendida tras activación por sensor
 
 # --- Pines ---
 pin_sensor_1 = Pin('D0', Pin.IN, Pin.PULL_UP)

@@ -222,7 +222,8 @@ def main():
         print("XBee y Watchdog inicializados.")
         print("XBee NI: {}".format(xbee.atcmd('NI')))
         print( "Perfil: CAMARA")
-        DEVICE_ID_NI = xbee.atcmd('NI') or DEVICE_IDtime.sleep_ms(5000) # Esperar para estabilizar
+        DEVICE_ID_NI = xbee.atcmd('NI') or DEVICE_ID
+        time.sleep_ms(5000) # Esperar para estabilizar
     except Exception as e:
         print("Error critico en inicializacion: {}".format(e))
         while True:
