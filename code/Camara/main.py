@@ -18,25 +18,15 @@ class Camara(XBeeDevice):
     STATE_SENSOR_TRIGGERED = 3  # Estado adicional para activación por sensor
 
     def __init__(self):
-        super().__init__(device_id="XBEE_CAM", wdt_timeout=120000, battery_pin='D1', battery_scaling_factor=2.9)
-        self.coordinator_addr = COORDINATOR_64BIT_ADDR
-        
-        # Pines específicos de la cámara
-        self.pin_sensor_1 = Pin('D0', Pin.IN, Pin.PULL_UP)
-        self.pin_sensor_2 = Pin('D2', Pin.IN, Pin.PULL_UP)
-        self.pin_sensor_3 = Pin('D3', Pin.IN, Pin.PULL_UP)
-        self.pin_sensor_4 = Pin('D4', Pin.IN, Pin.PULL_UP)
-        self.pin_camera = Pin('D12', Pin.OUT, value=0)
-        
-        # Variables específicas
-        self.camera_on_time = 0
-        self.manual_camera = False  # Flag para anular el temporizador de la cámara
+        super().__init__(device_id="XBEE_CAM", wdt_timeout=120000, battery_pin='D1', battery_scaling_factor=2.9, pin_camera='D12')
+        self.coordinator_addr = COORDINATOR_64BIT_ADDR        
 
     def check_and_process_incoming_messages(self):
         """
         Revisa si hay mensajes entrantes y los procesa.
         Devuelve True si se procesó un comando, False en caso contrario.
         """
+        self.feed_watchdog()
         sender, payload = self.check_received_messages()
         if not payload:
             return False
@@ -49,7 +39,7 @@ class Camara(XBeeDevice):
         
         if command == "TEL:ON":
             print("Comando ON recibido. Encendiendo cámara indefinidamente.")
-            self.pin_camera.value(1)
+            self.turn_on_camera()
             self.manual_camera = True  # Anula el temporizador
             self.device_state = self.STATE_SLEEP
             self.safe_send(sender, response_message)
@@ -57,7 +47,7 @@ class Camara(XBeeDevice):
         
         elif command == "TEL:OFF":
             print("Comando OFF recibido. Apagando cámara.")
-            self.pin_camera.value(0)
+            self.turn_off_camera()
             self.manual_camera = False
             self.device_state = self.STATE_SLEEP
             self.safe_send(sender, response_message)
@@ -73,7 +63,7 @@ class Camara(XBeeDevice):
             
         elif command == "SENSOR:ON":
             print("Comando SENSOR:ON recibido. Encendiendo cámara por temporizador.")
-            self.pin_camera.value(1)
+            self.turn_on_camera()
             self.camera_on_time = time.ticks_ms()
             self.device_state = self.STATE_SLEEP
             self.safe_send(sender, response_message)
@@ -86,6 +76,7 @@ class Camara(XBeeDevice):
         return False
 
     def check_sensor_pins(self):
+        self.feed_watchdog()
         """Devuelve True si algún sensor está activado, False si no."""
         return (self.pin_sensor_1.value() == 0 or self.pin_sensor_2.value() == 0 or
                 self.pin_sensor_3.value() == 0 or self.pin_sensor_4.value() == 0)
@@ -103,6 +94,7 @@ class Camara(XBeeDevice):
                 # --- Máquina de Estados ---
                 if self.device_state == self.STATE_STARTUP:
                     print("--- Estado: STARTUP ---")
+                    self.feed_watchdog()
                     battery_voltage = self.get_battery_status(as_string=False)
                     message = "{}:{:.2f}:Dispositivo iniciado".format(self.device_node_id, battery_voltage)
                     if self.safe_send_and_wait_ack(self.coordinator_addr, message):
@@ -112,6 +104,7 @@ class Camara(XBeeDevice):
                 
                 elif self.device_state == self.STATE_SLEEP:
                     print("--- Estado: SLEEP ---")
+                    self.feed_watchdog()
                     idle_start = time.ticks_ms()
                     while time.ticks_diff(time.ticks_ms(), idle_start) < self.SLEEP_DURATION_MS:
                         self.feed_watchdog()
@@ -122,28 +115,31 @@ class Camara(XBeeDevice):
                             print("Tiempo restante para apagado: {} segundos.".format((self.CAMERA_ON_DURATION_MS - time.ticks_diff(time.ticks_ms(), self.camera_on_time)) // 1000))
                         # --- Gestión de la cámara (se apaga por temporizador solo si no es manual) ---
                         if self.pin_camera.value() == 1 and not self.manual_camera and time.ticks_diff(time.ticks_ms(), self.camera_on_time) > self.CAMERA_ON_DURATION_MS:
-                            self.pin_camera.value(0)
+                            self.turn_off_camera()
                             print("Cámara apagada por temporizador.")
                             self.device_state = self.STATE_SLEEP
                             time.sleep_ms(50)
                 
                 elif self.device_state == self.STATE_SENSOR_TRIGGERED:
                     print("--- Estado: SENSOR_TRIGGERED ---")
-                    self.pin_camera.value(1)
+                    self.feed_watchdog()
+                    self.turn_on_camera()
                     self.camera_on_time = time.ticks_ms()
                     self.device_state = self.STATE_SLEEP
                 
                 elif self.device_state == self.STATE_ERROR:
                     print("--- Estado: ERROR ---")
+                    self.feed_watchdog()
                     print("Intentando reiniciar en {} segundos...".format(self.STATE_ERROR_SLEEP_MS / 1000))
                     time.sleep_ms(self.STATE_ERROR_SLEEP_MS)
                     self.device_state = self.STATE_STARTUP
             
             except Exception as e:
+                self.feed_watchdog()
                 print("Error inesperado en el bucle principal: {}".format(e))
                 self.device_state = self.STATE_ERROR
                 time.sleep(10)
-
+    
 # --- Lógica Principal ---
 if __name__ == '__main__':
     camara = Camara()

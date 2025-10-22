@@ -18,7 +18,7 @@ CAMERA_DEVICE_64BIT_ADDR = b'\x00\x13\xA2\x00\x42\x3D\x8A\xAC'  # Reemplaza con 
 class Telemando(XBeeDevice):
     STATE_SEND_COMMAND = 4  # Nuevo estado para enviar comandos
     def __init__(self):
-        super().__init__(device_id="XBEE_TELEMANDO", battery_pin='D1', battery_scaling_factor=2.9)
+        super().__init__(device_id="XBEE_TELEMANDO", battery_pin='D1', battery_scaling_factor=2.9, wdt_timeout=60000, pin_camera='D12')
         self.coordinator_addr = COORDINATOR_64BIT_ADDR
         self.camera_addr = CAMERA_DEVICE_64BIT_ADDR
         
@@ -37,6 +37,7 @@ class Telemando(XBeeDevice):
         """
         Procesa los mensajes entrantes y responde cuando sea necesario.
         """
+        self.feed_watchdog()
         sender, payload = self.check_received_messages()
         if not payload:
             return False
@@ -65,6 +66,7 @@ class Telemando(XBeeDevice):
                 # --- Máquina de Estados ---
                 if self.device_state == self.STATE_STARTUP:
                     print("--- Estado: STARTUP ---")
+                    self.feed_watchdog()
                     battery_voltage = self.get_battery_status(as_string=False)
                     message = "{}:{:.2f}:Dispositivo iniciado.".format(self.device_node_id, battery_voltage)
                     if self.safe_send_and_wait_ack(self.coordinator_addr, message):
@@ -75,10 +77,9 @@ class Telemando(XBeeDevice):
                 
                 elif self.device_state == self.STATE_IDLE:
                     print("--- Estado: SLEEP ---")
-                    
+                    self.feed_watchdog()
                     while True:
                         self.feed_watchdog()
-                        
                         current_time = time.ticks_ms()
                         if time.ticks_diff(current_time, self.last_press_time) > self.DEBOUNCE_BOTTON_TIME_MS:
                             self.last_command = 0 
@@ -111,6 +112,7 @@ class Telemando(XBeeDevice):
                 
                 elif self.device_state == self.STATE_SEND_COMMAND:
                     print("--- Estado: SEND_COMMAND ---")
+                    self.feed_watchdog()
                     self.last_press_time = time.ticks_ms()
                     message = self.command_to_send
                     if not self.safe_send_and_wait_ack(self.camera_addr, message):
@@ -121,11 +123,13 @@ class Telemando(XBeeDevice):
                 
                 elif self.device_state == self.STATE_ERROR:
                     print("--- Estado: ERROR ---")
+                    self.feed_watchdog()
                     print("Intentando reiniciar en {} segundos...".format(self.STATE_ERROR_SLEEP_MS / 1000))
                     time.sleep_ms(self.STATE_ERROR_SLEEP_MS)
                     self.device_state = self.STATE_STARTUP
             
             except Exception as e:
+                self.feed_watchdog()
                 print("Error inesperado en el bucle principal: {}".format(e))
                 self.device_state = self.STATE_ERROR
                 time.sleep(10)
