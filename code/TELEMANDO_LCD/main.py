@@ -8,6 +8,7 @@ from sys import stdin, stdout
 from xbee_devices import COORDINATORS, DEVICES, DEFAULT_DID
 from xbee_devices import get_device_names, get_coordinator_names
 from menu_handler import MenuHandler
+import tools
 
 # --- Config ---
 # Instead of hardcoded addresses, use the current selected device
@@ -26,10 +27,13 @@ T_WDT = 10000        # 10 segundos
 T_DEB = 20          # debounce
 
 # --- Pines ---
-bUP = Pin('D2', Pin.IN, Pin.PULL_UP)
-bOK = Pin('D3', Pin.IN, Pin.PULL_UP)
-bDN = Pin('D4', Pin.IN, Pin.PULL_UP)
-bat = ADC('D1')
+bUP = Pin('D5', Pin.IN, Pin.PULL_UP)
+bOK = Pin('D9', Pin.IN, Pin.PULL_UP)
+bDN = Pin('D7', Pin.IN, Pin.PULL_UP)
+bat = ADC('D0')
+
+# ADC reference voltage
+AV_VALUES = {0: 1.25, 1: 2.5, 2: 3.3, None: 2.5}
 
 # --- Estados ---
 S_INIT = 0
@@ -49,17 +53,37 @@ uart = None  # Para comandos seriales
 
 # --- Funciones ---
 def bat_st(as_string=True):
+    """
+    Lee el voltaje de la batería.
+    Si as_string es True, devuelve un texto formateado.
+    Si as_string es False, devuelve solo el valor numérico del voltaje.
+    """
     try:
-        ref = 2.5
-        raw = bat.read()
-        v = (raw / 4095.0) * ref * (12.0 / 3.3) * 2.9
+        
+        # Obtener el voltaje de referencia configurado en el módulo.
+        try:
+            av = xbee.atcmd("AV")
+        except KeyError:
+            av = None # Por defecto para algunos módulos como el Cellular.
+        reference_v = AV_VALUES[av]
+
+        # Leer el valor crudo del ADC (0-4095).
+        adc_raw_value = bat.read()
+        
+        # Calcular el voltaje en el pin.
+        pin_voltage = (adc_raw_value / 4095.0) * reference_v
+        
+        # Aplicar el factor de escala del divisor de voltaje (12V / 3.3V).
+        battery_voltage = pin_voltage * (12.0 / 3.3) * 2.9 # Factor de corrección para divisor 12k+3.3k
         
         if as_string:
-            return "BAT:{:.1f}V".format(v)
+            # Formatear el resultado a dos decimales.
+            return "Bateria: {:.2f}V".format(battery_voltage)
         else:
-            return v
-    except:
-        return "BAT: ERR" if as_string else 0.0
+            return battery_voltage
+    except Exception as e:
+        print("Error al leer la bateria: {}".format(e))
+        return "Bateria: ERROR" if as_string else 0.0
 
 def update_device(device_name):
     """Update current device and its address"""
@@ -258,36 +282,37 @@ def main():
                     # Auto exit menu after inactivity
                     menu_handler.check_timeout(now)
                     
-                    # Serial command simulation (from XCTU terminal)
-                    try:
-                        serial_cmd = stdin.read()  # Non-blocking read
-                        if serial_cmd:
-                            serial_cmd = serial_cmd.upper()
-                            if 'U' in serial_cmd:
-                                last = now
-                                state_change, new_state = menu_handler.handle_button_press('UP', now, get_device_names, update_device)
-                                if state_change:
-                                    state = S_CMD if new_state == 'CMD' else S_IDLE
-                                    cmd = menu_handler.get_command()
-                                    break
-                            elif 'O' in serial_cmd:
-                                last = now
-                                state_change, new_state = menu_handler.handle_button_press('OK', now, get_device_names, update_device)
-                                if state_change:
-                                    state = S_CMD if new_state == 'CMD' else S_IDLE
-                                    cmd = menu_handler.get_command()
-                                    break
-                            elif 'D' in serial_cmd:
-                                last = now
-                                state_change, new_state = menu_handler.handle_button_press('DOWN', now, get_device_names, update_device)
-                                if state_change:
-                                    state = S_CMD if new_state == 'CMD' else S_IDLE
-                                    cmd = menu_handler.get_command()
-                                    break
-                    except:
-                        pass
-                
+                    # # Serial command simulation (from XCTU terminal)
+                    # try:
+                    #     serial_cmd = stdin.read()  # Non-blocking read
+                    #     if serial_cmd:
+                    #         serial_cmd = serial_cmd.upper()
+                    #         if 'U' in serial_cmd:
+                    #             last = now
+                    #             state_change, new_state = menu_handler.handle_button_press('UP', now, get_device_names, update_device)
+                    #             if state_change:
+                    #                 state = S_CMD if new_state == 'CMD' else S_IDLE
+                    #                 cmd = menu_handler.get_command()
+                    #                 break
+                    #         elif 'O' in serial_cmd:
+                    #             last = now
+                    #             state_change, new_state = menu_handler.handle_button_press('OK', now, get_device_names, update_device)
+                    #             if state_change:
+                    #                 state = S_CMD if new_state == 'CMD' else S_IDLE
+                    #                 cmd = menu_handler.get_command()
+                    #                 break
+                    #         elif 'D' in serial_cmd:
+                    #             last = now
+                    #             state_change, new_state = menu_handler.handle_button_press('DOWN', now, get_device_names, update_device)
+                    #             if state_change:
+                    #                 state = S_CMD if new_state == 'CMD' else S_IDLE
+                    #                 cmd = menu_handler.get_command()
+                    #                 break
+                    # except:
+                    #     pass
+                    # print(btn.value())       # 1 cuando suelto, 0 cuando pulso a GND
                     # Button handling
+                    print("UP: {}, OK: {}, DN: {}".format(bUP.value(), bOK.value(), bDN.value()))
                     if time.ticks_diff(now, last) > T_DEB:
                         if bUP.value() == 0:
                             last = now
