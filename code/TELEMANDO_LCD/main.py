@@ -170,7 +170,7 @@ def main():
         did = xbee.atcmd('NI') or DID
         
         # Initialize I2C with explicit pins and frequency
-        i2c = I2C(1)  # Use 400kHz standard frequency
+        i2c = I2C(1, freq=400000)  # Use 400kHz standard frequency
         time.sleep_ms(100)  # Allow I2C to stabilize
         
         print("Scanning I2C bus...")
@@ -259,7 +259,6 @@ def main():
                 
                 state = S_IDLE
                 cmd = ""
-                time.sleep_ms(20)
                 w.feed()
                 
             elif state == S_IDLE:
@@ -279,7 +278,7 @@ def main():
                     now = time.ticks_ms()
                     
                     # Auto exit menu after inactivity
-                    menu_handler.check_timeout(now)
+                    # menu_handler.check_timeout(now)
                     
                     if time.ticks_diff(now, last) > T_DEB:
                         if bUP.value() == 0:
@@ -289,7 +288,7 @@ def main():
                                 state = S_CMD if new_state == 'CMD' else S_IDLE
                                 cmd = menu_handler.get_command()
                                 break
-                            time.sleep_ms(T_DEB)
+                            # time.sleep_ms(T_DEB)
                             
                         elif bDN.value() == 0:
                             last = now
@@ -298,7 +297,7 @@ def main():
                                 state = S_CMD if new_state == 'CMD' else S_IDLE
                                 cmd = menu_handler.get_command()
                                 break
-                            time.sleep_ms(T_DEB)
+                            # time.sleep_ms(T_DEB)
                             
                         elif bOK.value() == 0:
                             last = now
@@ -307,15 +306,15 @@ def main():
                                 state = S_CMD if new_state == 'CMD' else S_IDLE
                                 cmd = menu_handler.get_command()
                                 break
-                            time.sleep_ms(T_DEB)
+                            # time.sleep_ms(T_DEB)
                 
                     time.sleep_ms(50)
                     
                     if time.ticks_diff(time.ticks_ms(), t_start) >= T_SLEEP:
                         break
 
-                if state == S_IDLE and time.ticks_diff(time.ticks_ms(), t_start) >= T_SLEEP:
-                    state = S_REP
+                # if state == S_IDLE and time.ticks_diff(time.ticks_ms(), t_start) >= T_SLEEP:
+                #     state = S_REP
                 
             elif state == S_REP:
                 w.feed()
@@ -335,7 +334,7 @@ def main():
                 send(C_ADDR, message, False)
                 
                 state = S_IDLE
-                time.sleep_ms(20)
+                # time.sleep_ms(20)
                 w.feed()
 
             elif state == S_ERR:
