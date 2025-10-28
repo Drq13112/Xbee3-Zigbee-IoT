@@ -1,105 +1,105 @@
-# Sistema de Comunicación Zigbee con XBee3 y ESP32
+# Zigbee Communication System with XBee3 and ESP32
 
-![Interfaz del Telemando LCD](assets/lcd_2.png)
+![Telemando LCD Interface](assets/lcd_2.png)
 
-## Descripción
+## Description
 
-Este proyecto implementa un sistema avanzado de comunicación inalámbrica utilizando módulos XBee3 con MicroPython, integrado con un ESP32 para conectividad celular y MQTT remoto. El sistema permite el control remoto de dispositivos IoT (como cámaras) a través de una red Zigbee, con un telemando físico equipado con pantalla OLED y botones para navegación intuitiva.
+This project implements an advanced wireless communication system using XBee3 modules with MicroPython, integrated with an ESP32 for cellular connectivity and remote MQTT. The system enables remote control of IoT devices (such as cameras) through a Zigbee network, with a physical telemando equipped with an OLED screen and buttons for intuitive navigation.
 
-## Funcionalidades Principales
+## Main Features
 
-### 1. Telemando con Pantalla LCD (TELEMANDO_LCD)
-- **Interfaz física**: Pantalla OLED SSD1306 de 128x64 píxeles con navegación por menú.
-- **Controles**: Tres botones (UP, OK, DOWN) para navegación y ejecución de comandos.
-- **Funciones**:
-  - Selección de dispositivos remotos (cámaras).
-  - Envío de comandos: Encender/Apagar cámara, solicitar reportes.
-  - Visualización de estado de batería, mensajes de confirmación y errores.
-- **Optimización**: Respuesta ultra-rápida a botones (1ms polling) con actualización asíncrona del LCD para evitar bloqueos.
+### 1. LCD Telemando (TELEMANDO_LCD)
+- **Physical Interface**: 128x64 pixel OLED SSD1306 screen with menu navigation.
+- **Controls**: Three buttons (UP, OK, DOWN) for navigation and command execution.
+- **Functions**:
+  - Remote device selection (cameras).
+  - Command sending: Turn camera on/off, request reports.
+  - Display of battery status, confirmation messages, and errors.
+- **Optimization**: Ultra-fast button response (1ms polling) with asynchronous LCD updates to avoid blocking.
 
-### 2. Coordinador Zigbee (COORD)
-- **Rol central**: Gestiona la red Zigbee como coordinador.
-- **Comunicación asíncrona**: Recibe reportes de dispositivos remotos y los reenvía al ESP32 via TTL.
-- **Solicitudes del ESP32**: Procesa comandos para reportes o control de cámaras, enviándolos a dispositivos remotos y devolviendo respuestas.
-- **Base de datos**: Mantiene registro de dispositivos conectados con información de batería y actividad.
+### 2. Zigbee Coordinator (COORD)
+- **Central Role**: Manages the Zigbee network as a coordinator.
+- **Asynchronous Communication**: Receives reports from remote devices and forwards them to the ESP32 via TTL.
+- **ESP32 Requests**: Processes commands for reports or camera control, sending them to remote devices and returning responses.
+- **Database**: Maintains a record of connected devices with battery and activity information.
 
-### 3. Dispositivos Remotos
-- **END_DEVICE**: Dispositivo final que responde a comandos del telemando (e.g., activar/desactivar GPIO para control de cámara).
-- **SENSOR_REMOTO**: Sensor que envía reportes periódicos de estado y batería al coordinador.
-- **ROUTER**: Extiende el alcance de la red Zigbee.
+### 3. Remote Devices
+- **END_DEVICE**: Final device that responds to telemando commands (e.g., activating/deactivating GPIO for camera control).
+- **SENSOR_REMOTO**: Sensor that periodically sends status and battery reports to the coordinator.
+- **ROUTER**: Extends the range of the Zigbee network.
 
-### 4. Integración con ESP32 (ESP32_CELULLAR)
-- **Comunicación TTL**: Interfaz serial asíncrona con el XBee coordinador.
-- **MQTT Remoto**: Conexión segura a un broker MQTT en otra red local, usando TLS con certificados cliente.
-- **Funciones**:
-  - Publica reportes de XBee en tópicos MQTT.
-  - Recibe comandos MQTT para enviar al XBee (opcional).
-- **Conectividad**: WiFi para acceso a internet y comunicación con broker remoto.
+### 4. Integration with ESP32 (ESP32_CELULLAR)
+- **TTL Communication**: Asynchronous serial interface with the XBee coordinator.
+- **Remote MQTT**: Secure connection to an MQTT broker on another local network, using TLS with client certificates.
+- **Functions**:
+  - Publishes XBee reports to MQTT topics.
+  - Receives MQTT commands to send to the XBee (optional).
+- **Connectivity**: WiFi for internet access and communication with the remote broker.
 
-### 5. Comunicación Segura y Eficiente
-- **Protocolo TTL**: Mensajes line-based (terminados en \n) para comunicación XBee-ESP32.
-- **MQTT con TLS**: Autenticación cliente-servidor para acceso seguro al broker remoto.
-- **Watchdog y Gestión de Energía**: WDT en todos los dispositivos para estabilidad, con modos de bajo consumo.
+### 5. Secure and Efficient Communication
+- **TTL Protocol**: Line-based messages (terminated with \n) for XBee-ESP32 communication.
+- **MQTT with TLS**: Client-server authentication for secure remote broker access without exposing public ports.
+- **Watchdog and Power Management**: WDT on all devices for stability, with low-power modes.
 
-## Arquitectura del Sistema
+## System Architecture
 
 ```
-[Telemando LCD] -- Zigbee -- [Coordinador] -- TTL -- [ESP32] -- WiFi -- [Broker MQTT Remoto]
+[Telemando LCD] -- Zigbee -- [Coordinator] -- TTL -- [ESP32] -- WiFi -- [Remote MQTT Broker]
                                       |
-                                      |-- Zigbee -- [Dispositivos Remotos (Cámaras/Sensores)]
+                                      |-- Zigbee -- [Remote Devices (Cameras/Sensors)]
 ```
 
-- **Red Zigbee**: Mesh network con XBee3 para comunicación inalámbrica fiable.
-- **ESP32 como Puente**: Conecta la red Zigbee a internet/MQTT.
-- **Telemando**: Interfaz de usuario físico para control local.
+- **Zigbee Network**: Mesh network with XBee3 for reliable wireless communication.
+- **ESP32 as a Bridge**: Connects the Zigbee network to the internet/MQTT.
+- **Telemando**: Physical user interface for local control.
 
-## Lo Interesante y Novedoso
+## Interesting and Innovative Aspects
 
-### 1. **Optimización Extrema de Respuesta en MicroPython**
-- **Polling ultra-rápido**: 1ms para detección de botones, logrando respuesta casi instantánea en un entorno limitado como XBee3.
-- **Separación de lógica**: Detección de botones independiente de actualización LCD para evitar bloqueos I2C.
-- **Debounce inteligente**: Timestamp-based sin sleeps bloqueantes, permitiendo polling continuo.
+### 1. **Extreme MicroPython Response Optimization**
+- **Ultra-fast Polling**: 1ms for button detection, achieving near-instant response in a constrained environment like XBee3.
+- **Logic Separation**: Button detection independent of LCD updates to avoid I2C blocking.
+- **Smart Debounce**: Timestamp-based without blocking sleeps, allowing continuous polling.
 
-### 2. **Comunicación Asíncrona Híbrida**
-- **TTL + MQTT**: Combinación de comunicación serial asíncrona con protocolo MQTT remoto, permitiendo control desde cualquier lugar con internet.
-- **Certificados TLS**: Implementación de seguridad avanzada en MQTT para acceso remoto seguro sin exponer puertos públicos.
+### 2. **Hybrid Asynchronous Communication**
+- **TTL + MQTT**: Combination of asynchronous serial communication with remote MQTT protocol, enabling control from anywhere with internet.
+- **TLS Certificates**: Advanced security implementation in MQTT for secure remote access without exposing public ports.
 
-### 3. **Arquitectura Modular y Reutilizable**
-- **Clase Base XBeeDevice**: Herencia para dispositivos comunes, con subclases específicas (e.g., Telemand hereda de XBeeDeviceMinimal para optimizar memoria).
-- **Gestión de Memoria**: Técnicas avanzadas para MicroPython (lazy imports, GC forzado, __slots__) en entornos con heap limitado.
+### 3. **Modular and Reusable Architecture**
+- **Base Class XBeeDevice**: Inheritance for common devices, with specific subclasses (e.g., Telemand inherits from XBeeDeviceMinimal to optimize memory).
+- **Memory Management**: Advanced techniques for MicroPython (lazy imports, forced GC, __slots__) in environments with limited heap.
 
-### 4. **Integración IoT Completa**
-- **Control Remoto de Cámaras**: Desde telemando físico hasta MQTT remoto, con confirmaciones bidireccionales.
-- **Monitoreo en Tiempo Real**: Reportes de batería y estado enviados automáticamente al broker MQTT.
+### 4. **Complete IoT Integration**
+- **Remote Camera Control**: From physical telemando to remote MQTT, with bidirectional confirmations.
+- **Real-Time Monitoring**: Battery and status reports automatically sent to the MQTT broker.
 
-### 5. **Optimizaciones de Hardware**
-- **I2C a 200kHz**: Balance óptimo entre velocidad y estabilidad para pantalla OLED.
-- **Watchdog Inteligente**: Alimentación automática en operaciones críticas para prevenir hangs.
+### 5. **Hardware Optimizations**
+- **I2C at 200kHz**: Optimal balance between speed and stability for OLED screen.
+- **Smart Watchdog**: Automatic feeding during critical operations to prevent hangs.
 
-## Instalación
+## Installation
 
-### Hardware Necesario:
+### Required Hardware:
 
-- Módulos XBee3 Zigbee (coordinador, router, end devices).
-- ESP32 con módulo WiFi.
-- Pantalla OLED SSD1306, botones y batería para telemando.
+- XBee3 Zigbee modules (coordinator, router, end devices).
+- ESP32 with WiFi module.
+- OLED SSD1306 screen, buttons, and battery for telemando.
 
 ### Software:
 
-- Instala MicroPython en XBee3 via XCTU.
-- Para ESP32: Usa PlatformIO con las librerías PubSubClient y WiFiClientSecure.
+- Install MicroPython on XBee3 via XCTU.
+- For ESP32: Use PlatformIO with PubSubClient and WiFiClientSecure libraries.
 
-### Configuración:
+### Configuration:
 
-- Configura direcciones Zigbee en `xbee_devices.py`.
-- Ajusta credenciales WiFi/MQTT en `ESP32_CELULLAR/src/main.cpp`.
-- Sube los códigos a cada dispositivo.
+- Configure Zigbee addresses in `xbee_devices.py`.
+- Adjust WiFi/MQTT credentials in `ESP32_CELULLAR/src/main.cpp`.
+- Upload the code to each device.
 
-## Uso
+## Usage
 
-1. **Configura la Red**: Enciende el coordinador y dispositivos remotos.
-2. **Telemando**: Navega el menú con botones para seleccionar dispositivo y enviar comandos.
-3. **Monitoreo**: Los reportes aparecen en el broker MQTT remoto.
-4. **Control Remoto**: Envía comandos MQTT al ESP32 para controlar dispositivos via XBee.
+1. **Set Up the Network**: Power on the coordinator and remote devices.
+2. **Telemando**: Navigate the menu with buttons to select devices and send commands.
+3. **Monitoring**: Reports appear on the remote MQTT broker.
+4. **Remote Control**: Send MQTT commands to the ESP32 to control devices via XBee.
 
-Este sistema demuestra una integración avanzada de tecnologías IoT, optimizada para rendimiento y seguridad en entornos embebidos.
+This system demonstrates an advanced integration of IoT technologies, optimized for performance and security in embedded environments.
