@@ -58,28 +58,24 @@ jobs:
           if [ ! -d "docs" ]; then
             echo "⚠️ 'docs/' folder not found. Creating a basic one..."
             mkdir -p docs
-            cat > docs/index.rst << EOF
-XBee Project Documentation
-==========================
-
-Welcome to the XBee Project docs!
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Contents:
-EOF
-
-            cat > docs/conf.py << EOF
-project = 'XBee Project'
-author = 'David'
-release = '1.0'
-
-extensions = []
-templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
-html_theme = 'alabaster'
-EOF
+            echo "XBee Project Documentation" > docs/index.rst
+            echo "==========================" >> docs/index.rst
+            echo "" >> docs/index.rst
+            echo "Welcome to the XBee Project docs!" >> docs/index.rst
+            echo "" >> docs/index.rst
+            echo ".. toctree::" >> docs/index.rst
+            echo "   :maxdepth: 2" >> docs/index.rst
+            echo "   :caption: Contents:" >> docs/index.rst
+            echo "" >> docs/index.rst
+            echo "project = 'XBee Project'" > docs/conf.py
+            echo "author = 'David'" >> docs/conf.py
+            echo "release = '1.0'" >> docs/conf.py
+            echo "" >> docs/conf.py
+            echo "extensions = []" >> docs/conf.py
+            echo "templates_path = ['_templates']" >> docs/conf.py
+            echo "exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']" >> docs/conf.py
+            echo "" >> docs/conf.py
+            echo "html_theme = 'alabaster'" >> docs/conf.py
           fi
 
           # Aseguramos que el directorio de salida existe
