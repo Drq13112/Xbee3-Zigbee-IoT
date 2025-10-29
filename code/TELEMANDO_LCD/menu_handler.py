@@ -2,8 +2,8 @@ import time
 from ssd1306 import SSD1306_I2C
 
 # --- Menu Configuration ---
-M_OPT = ["", "CAMARA ON", "CAMARA OFF", "CAMARA REPORT"]
-M_CMD = ["", "TEL:ON", "TEL:OFF", "TEL:REPORT"]
+M_OPT = ["", "ON", "OFF", "REQ_REPORT"]
+M_CMD = ["", "TEL:ON", "TEL:OFF", "REQ_REPORT"]
 
 class MenuHandler:
     def __init__(self, lcd, bat_st_function):
@@ -56,9 +56,8 @@ class MenuHandler:
         self.lcd.fill(0)
         
         # Title - smaller text, no battery formatting in menu
-        self.lcd.text("TELEMANDO", 0, 0)
-        # self.lcd.text(str(int(self.bat_st(False)))+"V", self.lcd.width - 25, 0)
-        self.lcd.text(self.bat_st(True) + "V", self.lcd.width - 35, 0)
+        self.lcd.text(self.current_device_name, 0, 0)
+        self.lcd.text("{:.2f}V".format(self.bat_st(False)), self.lcd.width - 45, 0) 
 
         # Separator line
         self.lcd.hline(0, 10, self.lcd.width, 1)
@@ -69,7 +68,7 @@ class MenuHandler:
                 y = 15 + (i * 8)
                 
                 if i == 0:  # First option shows device name
-                    self.lcd.text(self.current_device_name, 8, y)
+                    self.lcd.text("SEL.XBEE", 8, y)
                 else:
                     # Show menu text without string slicing (saves memory)
                     self.lcd.text(op, 8, y)
@@ -79,29 +78,45 @@ class MenuHandler:
                     self.lcd.text("<", self.lcd.width - 10, y)
         
         # Status text at bottom - simplified
-        if sts:
-            self.lcd.text(sts, 0, self.lcd.height - 8)
+        # if sts:
+        #     self.lcd.text(sts, 0, self.lcd.height - 16)  # Upper status line
+        # if self.extra_msg:
+        #     self.lcd.text(self.extra_msg, 0, self.lcd.height - 8)  # Lower status line
+        
+        if self.extra_msg:
+            self.lcd.text(sts[:32], 0, self.lcd.height - 16)
+            self.lcd.text(self.extra_msg[:32], 0, self.lcd.height - 8)
+        
+        if sts and not self.extra_msg:
+            self.lcd.text(sts[:32], 32, self.lcd.height - 16)
         
         self.lcd.show()
 
     def device_selection_menu(self, device_names):
         """Display device selection menu - optimized"""
         self.lcd.fill(0)
-        self.lcd.text("SEL.CAMARA", 0, 0)
+        self.lcd.text("SEL.DEVICE", 0, 0)
         self.lcd.hline(0, 10, self.lcd.width, 1)
         
         # Show available devices - max 5
         for i, name in enumerate(device_names):
             if i < 5:
-                y = 16 + (i * 8)
+                y = 15 + (i * 9)
                 self.lcd.text(name, 8, y)
+                
+                # Draw dotted line between devices (after each device except the last)
+                # if i < len(device_names) - 1 and i < 4:  # Don't draw after last device or beyond max
+                #     y_line = y + 9  # Add 1 pixel space below text
+                # Draw dotted line: alternating 2-pixel segments with 2-pixel gaps
+                # for x in range(0, self.lcd.width, 4):
+                #     self.lcd.hline(x, y_line, 2, 1)  # 2 pixels on, 2 off
                 
                 # Mark selection
                 if name == self.current_device_name:
                     self.lcd.text("<", self.lcd.width - 10, y)
         
         self.lcd.show()
-
+        
     def standby_display(self):
         """Display standby screen with battery status"""
         self.lcd.fill(0)

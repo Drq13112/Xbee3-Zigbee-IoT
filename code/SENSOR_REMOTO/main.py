@@ -48,7 +48,39 @@ class EndDevice(XBeeDevice):
     def turn_off_camera(self):
         self.pin_camera.value(0)
         print("Cámara apagada.")       
+    
+    def check_and_process_incoming_messages(self):
+        """
+        Revisa si hay mensajes entrantes y los procesa.
+        Devuelve True si se procesó un comando, False en caso contrario.
+        """
+        self.feed_watchdog()
+        sender, payload = self.check_received_messages()
+        if not payload:
+            return False
         
+        payload = payload.strip()
+        print("Mensaje recibido de {}: '{}'".format(sender, payload))
+        
+        command = payload
+        response_message = "{}:OK".format(command)
+        
+        if command == "REQ_REPORT":
+            print("Comando REPORT recibido.")
+            battery_status = self.get_battery_status(as_string=True)
+            report = "Estado: {}, Camara: {}, {}, Manual: {}".format(self.device_state, "ON" if self.pin_camera.value() else "OFF", battery_status, self.manual_camera)
+            self.safe_send(sender, "{}: {}".format(self.device_node_id, report))
+            if sender == self.coordinator_addr:
+                self.contador_fallo_comunicacion = 0
+            self.device_state = self.STATE_IDLE
+            return True
+
+        else:
+            response_message = "UNKNOWN COMMAND RECEIVED"
+            self.safe_send(sender, response_message)
+            
+        return False
+         
     def run(self):
         self.setup()
         
@@ -99,6 +131,9 @@ class EndDevice(XBeeDevice):
                         if self.pin_sensor_general:
                             self.device_state = self.STATE_SENSOR_TRIGGERED
                             break
+                        
+                        if self.check_and_process_incoming_messages():
+                            continue  # Si se procesó un comando, reiniciar el bucle
 
                         time.sleep_ms(self.SLEEP_DURATION_MS)  # Pequeña pausa para no saturar CPU
 
