@@ -9,6 +9,10 @@ jobs:
     name: 🧠 Lint, Syntax & Unit Tests
     runs-on: ubuntu-latest
 
+    # 👇 permisos movidos aquí (a nivel de job)
+    permissions:
+      contents: write
+
     steps:
       - name: 🧩 Checkout repository
         uses: actions/checkout@v4
@@ -35,7 +39,6 @@ jobs:
       - name: 🧠 MicroPython syntax validation
         run: |
           echo "🧠 Checking syntax compatibility..."
-          # micropython no está instalado por defecto, así que hacemos un check con CPython
           for f in $(find code -name "*.py"); do
             echo "Validating syntax: $f"
             python -m py_compile "$f"
@@ -54,7 +57,6 @@ jobs:
       - name: 📚 Generate Documentation (Sphinx fallback)
         run: |
           echo "📚 Generating documentation with Sphinx..."
-          # Si no existe la carpeta docs/, la creamos con contenido mínimo
           if [ ! -d "docs" ]; then
             echo "⚠️ 'docs/' folder not found. Creating a basic one..."
             mkdir -p docs
@@ -67,6 +69,7 @@ jobs:
             echo "   :maxdepth: 2" >> docs/index.rst
             echo "   :caption: Contents:" >> docs/index.rst
             echo "" >> docs/index.rst
+
             echo "project = 'XBee Project'" > docs/conf.py
             echo "author = 'David'" >> docs/conf.py
             echo "release = '1.0'" >> docs/conf.py
@@ -78,12 +81,8 @@ jobs:
             echo "html_theme = 'alabaster'" >> docs/conf.py
           fi
 
-          # Aseguramos que el directorio de salida existe
           mkdir -p docs/_build/markdown
-
-          # Ejecutamos Sphinx (ya con todo preparado)
           sphinx-build -b markdown docs docs/_build/markdown || echo "⚠️ Sphinx build failed, continuing anyway"
-
           echo "✅ Documentation generated successfully."
 
       - name: 📤 Deploy Documentation to GitHub Wiki (if on main branch)
@@ -95,8 +94,6 @@ jobs:
           WIKI_PUSH_MESSAGE: "Update documentation from CI"
           GH_MAIL: "github-actions[bot]@users.noreply.github.com"
           GH_NAME: "github-actions[bot]"
-        permissions:
-          contents: write
 
       - name: ✅ Final Summary
         run: |
