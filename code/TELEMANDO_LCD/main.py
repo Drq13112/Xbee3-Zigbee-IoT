@@ -8,7 +8,6 @@ from sys import stdin, stdout
 from xbee_devices import COORDINATORS, DEVICES, DEFAULT_DID
 from xbee_devices import get_device_names, get_coordinator_names
 from menu_handler import MenuHandler
-import tools
 
 # --- Config ---
 # Instead of hardcoded addresses, use the current selected device
