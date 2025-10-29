@@ -88,7 +88,7 @@ jobs:
 
       - name: 📤 Deploy Documentation to GitHub Wiki (if on main branch)
         if: github.ref == 'refs/heads/main'
-        uses: Andrew-Chen-Wang/github-wiki-action@v1
+        uses: andrew-wang-developer/github-wiki-action@v2
         with:
           WIKI_DIR: docs/_build/markdown
           GH_PAT: ${{ secrets.GITHUB_TOKEN }}
