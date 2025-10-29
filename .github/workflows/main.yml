@@ -107,10 +107,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
 
           # Limpiamos cualquier directorio wiki existente
-          # rm -rf wiki
+          rm -rf wiki
 
-          # # Clonamos el wiki en una carpeta temporal
-          # git clone "https://github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
+          # Clonamos el wiki en una carpeta temporal
+          git clone "https://github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
 
           # Copiamos los archivos generados por Sphinx
           rsync -av --delete docs/_build/markdown/ wiki/
