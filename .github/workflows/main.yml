@@ -68,7 +68,30 @@ jobs:
             mkdir -p docs
             echo "XBee Project Documentation" > docs/index.rst
             echo "========================" >> docs/index.rst
+            echo "" >> docs/index.rst
             echo "This is the documentation for the XBee project." >> docs/index.rst
+            echo "" >> docs/index.rst
+            echo "Contents:" >> docs/index.rst
+            echo "" >> docs/index.rst
+            echo ".. toctree::" >> docs/index.rst
+            echo "   :maxdepth: 2" >> docs/index.rst
+            echo "   :caption: Contents:" >> docs/index.rst
+            echo "" >> docs/index.rst
+            # Create basic conf.py for Sphinx
+            cat > docs/conf.py << EOF
+          project = 'XBee Project'
+          copyright = '2023, David'
+          author = 'David'
+          release = '1.0'
+          
+          extensions = []
+          
+          templates_path = ['_templates']
+          exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+          
+          html_theme = 'alabaster'
+          html_static_path = ['_static']
+          EOF
             sphinx-build -b html docs docs/_build/html
           fi
           echo "Documentation generated successfully."
