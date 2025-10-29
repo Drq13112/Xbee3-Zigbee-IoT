@@ -53,56 +53,18 @@ jobs:
 
       - name: 📚 Generate Documentation with Oxygen
         run: |
-          echo "📚 Generating documentation with Oxygen..."
-          # Check if Oxygen DITA files exist
-          if [ -d "docs/dita" ] || [ -f "docs/*.dita" ]; then
-            # Assuming Oxygen CLI is available or use Docker
-            # For demo, use a placeholder; replace with actual Oxygen command
-            echo "Oxygen files found. Generating docs..."
-            # Example: oxygen --transform docs/main.ditamap --output docs/output --format html
-            # Since Oxygen CLI may not be installed, use Sphinx as fallback for Python docs
-            sphinx-build -b markdown docs docs/_build/markdown || echo "Sphinx fallback used"
-          else
-            echo "No Oxygen DITA files found. Generating basic Sphinx docs..."
-            # Create basic Sphinx docs if no DITA
-            mkdir -p docs
-            echo "XBee Project Documentation" > docs/index.rst
-            echo "========================" >> docs/index.rst
-            echo "" >> docs/index.rst
-            echo "This is the documentation for the XBee project." >> docs/index.rst
-            echo "" >> docs/index.rst
-            echo "Contents:" >> docs/index.rst
-            echo "" >> docs/index.rst
-            echo ".. toctree::" >> docs/index.rst
-            echo "   :maxdepth: 2" >> docs/index.rst
-            echo "   :caption: Contents:" >> docs/index.rst
-            echo "" >> docs/index.rst
-            # Create basic conf.py for Sphinx
-            cat > docs/conf.py << EOF
-          project = 'XBee Project'
-          copyright = '2023, David'
-          author = 'David'
-          release = '1.0'
-          
-          extensions = []
-          
-          templates_path = ['_templates']
-          exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-          
-          html_theme = 'alabaster'
-          # html_static_path = ['_static']  # Removed to avoid warning
-          EOF
-            sphinx-build -b markdown docs docs/_build/markdown
-          fi
+          sphinx-build -b markdown docs docs/_build/markdown
           echo "Documentation generated successfully."
 
       - name: 📤 Deploy Documentation to GitHub Wiki (if on main branch)
         if: github.ref == 'refs/heads/main'
         uses: Andrew-Chen-Wang/github-wiki-action@v1
         with:
-          WIKI_DIR: docs/_build/markdown  # Directory with generated Markdown docs
+          WIKI_DIR: docs/_build/markdown
           GH_PAT: ${{ secrets.GITHUB_TOKEN }}
           WIKI_PUSH_MESSAGE: "Update documentation from CI"
+          GH_MAIL: "github-actions[bot]@users.noreply.github.com"
+          GH_NAME: "github-actions[bot]"
 
       - name: ✅ Final Summary
         run: |
