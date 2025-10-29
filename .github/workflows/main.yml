@@ -20,7 +20,7 @@ jobs:
 
       - name: 📦 Install dependencies
         run: |
-          pip install flake8 black pytest pytest-cov mock mpremote sphinx sphinx-rtd-theme
+          pip install flake8 black pytest pytest-cov mock mpremote sphinx sphinx-rtd-theme sphinx-markdown-builder
 
       - name: 🧹 Lint code style (flake8)
         run: |
@@ -61,7 +61,7 @@ jobs:
             echo "Oxygen files found. Generating docs..."
             # Example: oxygen --transform docs/main.ditamap --output docs/output --format html
             # Since Oxygen CLI may not be installed, use Sphinx as fallback for Python docs
-            sphinx-build -b html docs docs/_build/html || echo "Sphinx fallback used"
+            sphinx-build -b markdown docs docs/_build/markdown || echo "Sphinx fallback used"
           else
             echo "No Oxygen DITA files found. Generating basic Sphinx docs..."
             # Create basic Sphinx docs if no DITA
@@ -90,9 +90,9 @@ jobs:
           exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
           
           html_theme = 'alabaster'
-          html_static_path = ['_static']
+          # html_static_path = ['_static']  # Removed to avoid warning
           EOF
-            sphinx-build -b html docs docs/_build/html
+            sphinx-build -b markdown docs docs/_build/markdown
           fi
           echo "Documentation generated successfully."
 
@@ -100,7 +100,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: Andrew-Chen-Wang/github-wiki-action@v1
         with:
-          path: docs/_build/html  # Directory with generated docs
+          path: docs/_build/markdown  # Directory with generated Markdown docs
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Update documentation from CI"
 
