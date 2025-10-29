@@ -1,13 +1,14 @@
 # Dictionary for coordinator devices with format: 'nickname': address_bytes
 COORDINATORS = {
-    "CENTRAL": b'\x00\x13\xA2\x00\x42\x3D\x8B\x99',  # Original C_ADDR
+    "COORD": b'\x00\x13\xA2\x00\x42\x3D\x8B\x99',  # Original C_ADDR
 }
 
 # Dictionary for end devices with format: 'nickname': address_bytes
 DEVICES = {
     "CAMARA1": b'\x00\x13\xA2\x00\x42\x3D\x8A\xAC',  # Original D_ADDR
     "CAMARA2": b'\x00\x13\xA2\x00\x42\x3D\x8A\xAD',
-    "CAMARA3": b'\x00\x13\xA2\x00\x42\x3D\x8A\xAE',
+    "SENSOR1": b'\x00\x13\xA2\x00\x42\x3D\x8D\x6E',
+    "ROUTER1": b'\x00\x13\xA2\x00\x42\x3D\x8A\xAE',
 }
 
 # Default device identifier
@@ -29,6 +30,16 @@ def get_coordinator_names():
 def get_device_names():
     return list(DEVICES.keys())
 
+def add_device(nickname, address_bytes):
+    DEVICES.update({nickname: address_bytes})
+    
+def add_coordinator(nickname, address_bytes):
+    COORDINATORS.update({nickname: address_bytes})
+    
+def remove_device(nickname):
+    if nickname in DEVICES:
+        del DEVICES[nickname]
+    
 # Get default coordinator (first one)
 def get_default_coordinator():
     """Get first coordinator name or None"""
