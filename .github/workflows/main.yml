@@ -52,34 +52,52 @@ jobs:
           echo "## 📈 Coverage Report" >> $GITHUB_STEP_SUMMARY
           pytest -q --disable-warnings --cov=code --cov-report=term >> $GITHUB_STEP_SUMMARY || true
 
-      - name: 📚 Generate Documentation (Sphinx fallback)
+      - name: 📚 Generate Documentation (Sphinx autodoc)
         run: |
-          echo "📚 Generating documentation with Sphinx..."
-          if [ ! -d "docs" ]; then
-            echo "⚠️ 'docs/' folder not found. Creating a basic one..."
-            mkdir -p docs
-            echo "XBee Project Documentation" > docs/index.rst
-            echo "==========================" >> docs/index.rst
-            echo "" >> docs/index.rst
-            echo "Welcome to the XBee Project docs!" >> docs/index.rst
-            echo "" >> docs/index.rst
-            echo ".. toctree::" >> docs/index.rst
-            echo "   :maxdepth: 2" >> docs/index.rst
-            echo "   :caption: Contents:" >> docs/index.rst
+          echo "📚 Generating documentation with Sphinx autodoc..."
 
-            echo "project = 'XBee Project'" > docs/conf.py
-            echo "author = 'David'" >> docs/conf.py
-            echo "release = '1.0'" >> docs/conf.py
-            echo "" >> docs/conf.py
-            echo "extensions = []" >> docs/conf.py
-            echo "templates_path = ['_templates']" >> docs/conf.py
-            echo "exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']" >> docs/conf.py
-            echo "html_theme = 'alabaster'" >> docs/conf.py
+          if [ ! -d "docs" ]; then
+            mkdir -p docs
           fi
+
+          # conf.py mínimo con autodoc
+          echo "project = 'XBee Project'" > docs/conf.py
+          echo "author = 'David'" >> docs/conf.py
+          echo "release = '1.0'" >> docs/conf.py
+          echo "" >> docs/conf.py
+          echo "extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon', 'myst_parser']" >> docs/conf.py
+          echo "templates_path = ['_templates']" >> docs/conf.py
+          echo "exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']" >> docs/conf.py
+          echo "" >> docs/conf.py
+          echo "html_theme = 'alabaster'" >> docs/conf.py
+
+          # index.rst principal
+          echo "XBee Project Documentation" > docs/index.rst
+          echo "==========================" >> docs/index.rst
+          echo "" >> docs/index.rst
+          echo ".. toctree::" >> docs/index.rst
+          echo "   :maxdepth: 2" >> docs/index.rst
+          echo "   :caption: Contents:" >> docs/index.rst
+          echo "" >> docs/index.rst
+          echo "   modules" >> docs/index.rst
+          echo "" >> docs/index.rst
+
+          # Genera un modules.rst con todos los scripts en code/
+          echo "Modules" > docs/modules.rst
+          echo "=======" >> docs/modules.rst
+          for f in $(find code -name "*.py" -not -name "__init__.py"); do
+            mod=$(echo $f | sed 's|/|.|g' | sed 's/.py$//')
+            echo "" >> docs/modules.rst
+            echo ".. automodule:: $mod" >> docs/modules.rst
+            echo "   :members:" >> docs/modules.rst
+            echo "   :undoc-members:" >> docs/modules.rst
+            echo "   :show-inheritance:" >> docs/modules.rst
+          done
 
           mkdir -p docs/_build/markdown
           sphinx-build -b markdown docs docs/_build/markdown || echo "⚠️ Sphinx build failed, continuing anyway"
           echo "✅ Documentation generated successfully."
+
 
       - name: 📤 Deploy Documentation to GitHub Wiki (if on main branch)
         if: github.ref == 'refs/heads/main'
