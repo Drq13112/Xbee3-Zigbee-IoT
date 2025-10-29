@@ -59,37 +59,34 @@ jobs:
           mkdir -p docs
 
           # conf.py mínimo con autodoc y mocks
-          cat << EOF > docs/conf.py
-          import sys
-          import os
-          sys.path.insert(0, os.path.abspath('code'))
+          echo "import sys" > docs/conf.py
+          echo "import os" >> docs/conf.py
+          echo "sys.path.insert(0, os.path.abspath('code'))" >> docs/conf.py
+          echo "" >> docs/conf.py
+          echo "project = 'XBee Project'" >> docs/conf.py
+          echo "author = 'David'" >> docs/conf.py
+          echo "release = '1.0'" >> docs/conf.py
+          echo "" >> docs/conf.py
+          echo "extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon', 'myst_parser']" >> docs/conf.py
+          echo "" >> docs/conf.py
+          echo "# Evita errores de import de módulos de MicroPython o hardware" >> docs/conf.py
+          echo "autodoc_mock_imports = ['ROUTER', 'END_DEVICE', 'COMUNICACION_1_XBEE', 'COMUNICACION_2_XBEE', 'Camara', 'COORD', 'TELEMANDO', 'TELEMANDO_LCD', 'SENSOR_REMOTO', 'tools']" >> docs/conf.py
+          echo "" >> docs/conf.py
+          echo "templates_path = ['_templates']" >> docs/conf.py
+          echo "exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']" >> docs/conf.py
+          echo "" >> docs/conf.py
+          echo "html_theme = 'alabaster'" >> docs/conf.py
 
-          project = 'XBee Project'
-          author = 'David'
-          release = '1.0'
-
-          extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon', 'myst_parser']
-
-          # Evita errores de import de módulos de MicroPython o hardware
-          autodoc_mock_imports = ['ROUTER', 'END_DEVICE', 'COMUNICACION_1_XBEE', 'COMUNICACION_2_XBEE', 'Camara', 'COORD', 'TELEMANDO', 'TELEMANDO_LCD', 'SENSOR_REMOTO', 'tools']
-
-          templates_path = ['_templates']
-          exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
-          html_theme = 'alabaster'
-          EOF
-
-                    # index.rst
-                    cat << EOF > docs/index.rst
-          XBee Project Documentation
-          ==========================
-
-          .. toctree::
-            :maxdepth: 2
-            :caption: Contents:
-
-            modules
-          EOF
+          # index.rst
+          echo "XBee Project Documentation" > docs/index.rst
+          echo "==========================" >> docs/index.rst
+          echo "" >> docs/index.rst
+          echo ".. toctree::" >> docs/index.rst
+          echo "   :maxdepth: 2" >> docs/index.rst
+          echo "   :caption: Contents:" >> docs/index.rst
+          echo "" >> docs/index.rst
+          echo "   modules" >> docs/index.rst
+          echo "" >> docs/index.rst
 
           # modules.rst con todos los scripts
           echo "Modules" > docs/modules.rst
