@@ -4,8 +4,9 @@ from machine import Pin
 import machine
 import time
 import xbee
-from ..tools import XBeeDevice  # Assuming tools.py is in the parent directory; adjust if needed
+from tools import XBeeDevice  # Assuming tools.py is in the parent directory; adjust if needed
 
+xbee_device = xbee.XBee()
 # --- Configuración ---
 # Objetivo para reportes periódicos y de estado
 COORDINATOR_NODE_ID = "XBEE_COOR"
@@ -15,11 +16,12 @@ class Camara(XBeeDevice):
     # Sobrescribir constantes específicas de la cámara
     RETRY_DELAY_MS = 1000
     HEARING_INTERVAL_MS = 2000
-    STATE_SENSOR_TRIGGERED = 3  # Estado adicional para activación por sensor
+    STATE_SENSOR_TRIGGERED = 4  # Estado adicional para activación por sensor
 
-    def __init__(self):
-        super().__init__(device_id="XBEE_CAM", wdt_timeout=120000, battery_pin='D1', battery_scaling_factor=2.9, pin_camera='D12')
-        self.coordinator_addr = COORDINATOR_64BIT_ADDR        
+    def __init__(self, xbee_instance=None):
+        super().__init__(device_id="XBEE_CAM", wdt_timeout=120000, battery_pin='D1', battery_scaling_factor=2.9, pin_camera='D12', xbee_instance=xbee_instance)
+        self.coordinator_addr = COORDINATOR_64BIT_ADDR 
+        self.old_state = 0       
 
     def check_and_process_incoming_messages(self):
         """
@@ -82,9 +84,18 @@ class Camara(XBeeDevice):
         """Devuelve True si algún sensor está activado, False si no."""
         return (self.pin_sensor_1.value() == 0 or self.pin_sensor_2.value() == 0 or
                 self.pin_sensor_3.value() == 0 or self.pin_sensor_4.value() == 0)
+    
+    def turn_on_camera(self):
+        self.pin_camera.value(1)
+        print("Cámara encendida.")
 
+    def turn_off_camera(self):
+        self.pin_camera.value(0)
+        print("Cámara apagada.")
+    
     def run(self):
         self.setup()
+        self.device_state = self.STATE_STARTUP
         while True:
             self.feed_watchdog()
             
@@ -105,7 +116,8 @@ class Camara(XBeeDevice):
                         self.device_state = self.STATE_ERROR
                 
                 elif self.device_state == self.STATE_SLEEP:
-                    print("--- Estado: SLEEP ---")
+                    if (self.old_state != self.device_state):
+                        print("--- Estado: SLEEP ---")
                     self.feed_watchdog()
                     idle_start = time.ticks_ms()
                     while time.ticks_diff(time.ticks_ms(), idle_start) < self.SLEEP_DURATION_MS:
@@ -122,12 +134,12 @@ class Camara(XBeeDevice):
                             self.device_state = self.STATE_SLEEP
                             time.sleep_ms(50)
                 
-                elif self.device_state == self.STATE_SENSOR_TRIGGERED:
-                    print("--- Estado: SENSOR_TRIGGERED ---")
-                    self.feed_watchdog()
-                    self.turn_on_camera()
-                    self.camera_on_time = time.ticks_ms()
-                    self.device_state = self.STATE_SLEEP
+                # elif self.device_state == self.STATE_SENSOR_TRIGGERED:
+                #     print("--- Estado: SENSOR_TRIGGERED ---")
+                #     self.feed_watchdog()
+                #     self.turn_on_camera()
+                #     self.camera_on_time = time.ticks_ms()
+                #     self.device_state = self.STATE_SLEEP
                 
                 elif self.device_state == self.STATE_ERROR:
                     print("--- Estado: ERROR ---")
@@ -136,6 +148,7 @@ class Camara(XBeeDevice):
                     time.sleep_ms(self.STATE_ERROR_SLEEP_MS)
                     self.device_state = self.STATE_STARTUP
 
+                self.old_state = self.device_state
                 self.check_coordinator_retry() # Background check for coordinator retries
                 
             except Exception as e:
@@ -146,5 +159,5 @@ class Camara(XBeeDevice):
     
 # --- Lógica Principal ---
 if __name__ == '__main__':
-    camara = Camara()
+    camara = Camara(xbee_instance=xbee_device)
     camara.run()

@@ -32,13 +32,14 @@ class EndDevice(XBeeDevice):
         self.camera_remote = camera_remote                  # Usar cámara remota
         self.last_sensor_notification_time = 0              # Tiempo de la última notificación de sensor
         self.local_camera = local_camera
+        self.pin_sensor_5 = Pin('D8', Pin.IN, Pin.PULL_UP)
 
     def check_pins_sensor(self):
         self.feed_watchdog()
-        # if (self.pin_sensor_5.value() != 0):
-        #     self.pin_sensor_general = True
-        # else:
-        #     self.pin_sensor_general = False
+        if (self.pin_sensor_5.value() != 0):
+            self.pin_sensor_general = True
+        else:
+            self.pin_sensor_general = False
 
     def turn_on_camera(self):
         self.pin_camera.value(1)
@@ -71,6 +72,7 @@ class EndDevice(XBeeDevice):
                         self.device_state = self.STATE_ERROR
                 
                 elif self.device_state == self.STATE_SLEEP:
+                    
                     print("--- Estado: SLEEP --- ")
                     self.feed_watchdog()
                     try:
@@ -157,6 +159,8 @@ class EndDevice(XBeeDevice):
                     self.setup()
                     self.feed_watchdog()
                     self.device_state = self.STATE_STARTUP
+                    
+                self.check_coordinator_retry() # Background check for coordinator retries
                 
             except Exception as e:
                 self.feed_watchdog()
@@ -166,5 +170,5 @@ class EndDevice(XBeeDevice):
 
 # --- Lógica Principal ---
 if __name__ == '__main__':
-    end_device = EndDevice(xbee_instance=xbee_device, deep_sleep=True, camera_remote=True, local_camera=False)
+    end_device = EndDevice(xbee_instance=xbee_device, deep_sleep=False, camera_remote=True, local_camera=False)
     end_device.run()

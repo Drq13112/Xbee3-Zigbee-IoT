@@ -49,7 +49,6 @@ class XBeeDevice:
         self.pin_sensor_2 = Pin('D2', Pin.IN, Pin.PULL_UP)
         self.pin_sensor_3 = Pin('D3', Pin.IN, Pin.PULL_UP)
         self.pin_sensor_4 = Pin('D4', Pin.IN, Pin.PULL_UP)
-        # self.pin_sensor_5 = Pin('D8', Pin.IN, Pin.PULL_UP)
         self.adc_battery = ADC(battery_pin)
         self.pin_camera = Pin(pin_camera, Pin.OUT, value=0)
 

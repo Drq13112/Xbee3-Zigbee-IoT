@@ -1,248 +1,172 @@
 # -*- coding: utf-8 -*-
 import sys
-from machine import Pin, WDT, ADC
+from machine import Pin
 import machine
 import time
 import xbee
+from tools import XBeeDevice  # Assuming tools.py is in the parent directory; adjust if needed
 
+
+xbee_device = xbee.XBee()
 # --- Configuración ---
 TARGET_NODE_ID = "XBEE_COOR"
-COORDINATOR_64BIT_ADDR = b'\x00\x13\xA2\x00\x42\x3D\x8D\x6E'
-DEVICE_ID = "XBEE_X"
-DEVICE_ID_NI = "NONE"
-
-# Periodos de tiempo (en milisegundos)
-SLEEP_DURATION_MS = 30000
-CAMERA_ON_DURATION_MS = 30000  # 30 segs
-RETRY_DELAY_S = 5
-WATCHDOG_TIMEOUT_MS = 60000  # 60 segundos. Debe ser mayor que cualquier espera.
-STATE_ERROR_SLEEP_MS = 5000  # 5 segundos en estado de error
-TIME_TO_REPORT_SENSORT_TRIGERED = 5000  # 5 segundos para enviar alerta tras sensor activado
-
-# --- Pines ---
-pin_sensor_1 = Pin('D0', Pin.IN, Pin.PULL_UP)
-pin_sensor_2 = Pin('D2', Pin.IN, Pin.PULL_UP)
-pin_sensor_3 = Pin('D3', Pin.IN, Pin.PULL_UP)
-pin_sensor_4 = Pin('D4', Pin.IN, Pin.PULL_UP)
-adc_battery = ADC('D1')
-pin_camera = Pin('D5', Pin.OUT, value=0)
-
-# ADC reference voltage
-AV_VALUES = {0: 1.25, 1: 2.5, 2: 3.3, None: 2.5}
-
-# --- Estados del Dispositivo ---
-STATE_STARTUP = 0
-STATE_SLEEP = 1
-STATE_REPORT_BATTERY = 2
-STATE_SENSOR_ACTIVE = 3
-STATE_SENSOR_TRIGGERED = 4
-STATE_ERROR = 5
-
-# --- Variables Globales ---
-device_state = STATE_STARTUP
-camera_on_time = 0
-pin_sensor_general = False
-xb = None  # Se inicializará en main()
-dog = None
+COORDINATOR_64BIT_ADDR = b'\x00\x13\xA2\x00\x42\x3D\x8B\x99'
 
 
-def check_pins_sensor():
-    global pin_sensor_general
-    if (pin_sensor_1.value() != 0 or pin_sensor_2.value() != 0 or
-            pin_sensor_3.value() != 0 or pin_sensor_4.value() != 0):
-        pin_sensor_general = True
-    else:
-        pin_sensor_general = False
-    
-# --- Funciones Auxiliares ---
-def get_battery_status(as_string=True):
-    """
-    Lee el voltaje de la batería.
-    Si as_string es True, devuelve un texto formateado.
-    Si as_string es False, devuelve solo el valor numérico del voltaje.
-    """
-    try:
+CAMERA_DEVICE_NODE_ID = "XBEE_CAMERA"
+CAMERA_64BIT_ADDR = b'\x00\x13\xA2\x00\x42\x3D\x8A\xAC'
 
-        # Obtener el voltaje de referencia configurado en el módulo.
-        try:
-            av = xbee.atcmd("AV")
-        except KeyError:
-            av = None  # Por defecto para algunos módulos como el Cellular.
-        reference_v = AV_VALUES[av]
+class EndDevice(XBeeDevice):
+    # Sobrescribir constantes específicas del dispositivo
+    STATE_REPORT_BATTERY = 4
+    STATE_SENSOR_ACTIVE = 5
+    STATE_SENSOR_TRIGGERED = 6
+    STATE_ERROR = 7
 
-        # Leer el valor crudo del ADC (0-4095).
-        adc_raw_value = adc_battery.read()
+    def __init__(self, xbee_instance=None, deep_sleep=True, camera_remote=True, local_camera=False):
+        super().__init__(device_id="XBEE_X", wdt_timeout=60000, battery_pin='D1', battery_scaling_factor=2.9, pin_camera='D12', xbee_instance=xbee_instance)
+        self.coordinator_addr = COORDINATOR_64BIT_ADDR
+        self.remote_camera_addr = CAMERA_64BIT_ADDR
+        # Variables específicas del sensor remoto
+        self.deep_sleep = deep_sleep                        # Habilitar deep sleep
+        self.camera_remote = camera_remote                  # Usar cámara remota
+        self.last_sensor_notification_time = 0              # Tiempo de la última notificación de sensor
+        self.local_camera = local_camera
 
-        # Calcular el voltaje en el pin.
-        pin_voltage = (adc_raw_value / 4095.0) * reference_v
+    def check_pins_sensor(self):
+        self.feed_watchdog()
+        # if (self.pin_sensor_5.value() != 0):
+        #     self.pin_sensor_general = True
+        # else:
+        #     self.pin_sensor_general = False
 
-        # Aplicar el factor de escala del divisor de voltaje (12V / 3.3V).
-        battery_voltage = pin_voltage * (12.0 / 3.3)
+    def turn_on_camera(self):
+        self.pin_camera.value(1)
+        print("Cámara encendida.")
 
-        if as_string:
-            # Formatear el resultado a dos decimales.
-            return "Bateria: {:.2f}V".format(battery_voltage)
-        else:
-            return battery_voltage
-    except Exception as e:
-        print("Error al leer la bateria: {}".format(e))
-        return "Bateria: ERROR" if as_string else 0.0
-
-
-def safe_send_message(target_addr, message, retries=3):
-    """
-    Envía un mensaje de forma segura, con reintentos y alimentando el watchdog.
-    Espera un feedback (cualquier mensaje) del coordinador para confirmar.
-    """
-    global dog, xb, DEVICE_ID_NI
-    for attempt in range(retries):
-        try:
-            print("Enviando (intento {}/{})".format(attempt + 1, retries))
-            xbee.transmit(target_addr, message)
-
-            # Esperar feedback
-            start_wait = time.ticks_ms()
-            while time.ticks_diff(time.ticks_ms(), start_wait) < (RETRY_DELAY_S * 1000):
-                dog.feed()  # Alimentar mientras se espera
-                received_msg = xbee.receive()
-                if received_msg and received_msg['sender_eui64'] == target_addr:
-                    print("Feedback recibido del coordinador.")
-                    return True
-                time.sleep_ms(100)
-
-            print("No se recibió feedback en el tiempo esperado.")
-
-        except Exception as e:
-            print("Error al transmitir: {}".format(e))
-
-        # Si falla, esperar antes de reintentar
-        if attempt < retries - 1:
-            print("Reintentando en {} segundos...".format(RETRY_DELAY_S))
-            time.sleep(RETRY_DELAY_S)
-
-    print("Fallo al enviar mensaje tras varios reintentos.")
-    return False
-
-
-# --- Lógica Principal (Máquina de Estados) ---
-def main():
-    global device_state, camera_on_time, xb, dog, DEVICE_ID_NI, pin_sensor_general
-
-    # Inicialización del Watchdog y XBee
-    try:
-        dog = WDT(timeout=WATCHDOG_TIMEOUT_MS)
-        dog.feed()
-        xb = xbee.XBee()
-
-        print("XBee y Watchdog inicializados.")
-
-        # Configurar el pin D0 para que pueda despertar al módulo.
-        # El valor 1 es una máscara de bits para DIO0.
-        xbee.atcmd('IC', 1)
-        print("Pin D0 configurado para despertar el módulo.")
-        DEVICE_ID_NI = xbee.atcmd('NI') or DEVICE_ID
-    except Exception as e:
-        print("Error critico en inicializacion: {}".format(e))
+    def turn_off_camera(self):
+        self.pin_camera.value(0)
+        print("Cámara apagada.")       
+        
+    def run(self):
+        self.setup()
+        
         while True:
-            time.sleep(5)
+            self.feed_watchdog()
+            try:
+                
+                # --- Máquina de Estados ---
+                if self.device_state == self.STATE_STARTUP:
+                    print("--- Estado: STARTUP ---")
+                    self.feed_watchdog()
+                    battery_voltage = self.get_battery_status(as_string=False)
+                    message = "{}:{:.2f}:Dispositivo iniciado.".format(self.device_node_id, battery_voltage)
+                    if self.safe_send_and_wait_ack(self.coordinator_addr, message):
+                        if self.deep_sleep:
+                            self.device_state = self.STATE_SLEEP
+                        else:
+                            self.device_state = self.STATE_IDLE
+                    else:
+                        print("No se pudo contactar al coordinador en el arranque.")
+                        self.device_state = self.STATE_ERROR
+                
+                elif self.device_state == self.STATE_SLEEP:
+                    print("--- Estado: SLEEP --- ")
+                    self.feed_watchdog()
+                    try:
+                        # Use XBee instance methods, not module functions
+                        self.xbee_.sleep_now(self.DEEP_SLEEP_DURATION_MS, True)
+                        wake_reason = self.xbee_.wake_reason()
 
-    while True:
-        dog.feed()  # Alimentar al inicio de cada ciclo del bucle
+                        # Use XBee instance constants for comparison
+                        if wake_reason is xbee.PIN_WAKE:  # PIN_WAKE is a module constant
+                            print("Despertado por el sensor.")
+                            self.device_state = self.STATE_SENSOR_TRIGGERED
+                        else:
+                            print("Despertado por timeout de deep sleep.")
+                            self.device_state = self.STATE_REPORT_BATTERY  #Enviar reporte periodico
+                    except Exception as e:
+                        print("Error al determinar la razón de wakeup: {}".format(e))
+                        self.device_state = self.STATE_SENSOR_TRIGGERED
+                        
+                elif self.device_state == self.STATE_IDLE:
+                    print("--- Estado: IDLE --- ")
+                    while True:
+                        self.feed_watchdog()
+                        self.check_pins_sensor()
+                        if self.pin_sensor_general:
+                            self.device_state = self.STATE_SENSOR_TRIGGERED
+                            break
 
-        try:
-            # --- Gestión de la cámara ---
-            if pin_camera.value() == 1 and time.ticks_diff(time.ticks_ms(), camera_on_time) > CAMERA_ON_DURATION_MS:
-                pin_camera.value(0)
-                print("Cámara apagada por temporizador.")
-                device_state = STATE_REPORT_BATTERY
+                        time.sleep_ms(self.SLEEP_DURATION_MS)  # Pequeña pausa para no saturar CPU
 
-            # --- Máquina de Estados ---
-            if device_state == STATE_STARTUP:
-                print("--- Estado: STARTUP ---")
-                battery_voltage = get_battery_status(as_string=False)
-                message = "{}:{:.2f}:Dispositivo iniciado.".format(DEVICE_ID_NI, battery_voltage)
-                if safe_send_message(TARGET_64BIT_ADDR, message):
-                    device_state = STATE_SLEEP
-                else:
-                    print("No se pudo contactar al coordinador en el arranque.")
-                    device_state = STATE_ERROR
+                elif self.device_state == self.STATE_REPORT_BATTERY:
+                    print("--- Estado: REPORT_BATTERY ---")
+                    self.feed_watchdog()
+                    battery_voltage = self.get_battery_status(as_string=False)
+                    message = "{}:{:.2f}:Reporte periodico.".format(self.device_node_id, battery_voltage)
+                    if not self.safe_send_and_wait_ack(self.coordinator_addr, message):
+                        self.contador_fallo_comunicacion += 1
+                    else:
+                        self.contador_fallo_comunicacion = 0
+                    if self.deep_sleep:
+                        self.device_state = self.STATE_SLEEP
+                    else:
+                        self.device_state = self.STATE_IDLE
 
-            elif device_state == STATE_SLEEP:
-                print("--- Estado: SLEEP --- (durante {}s)".format(SLEEP_DURATION_MS / 1000))
-                # Habilitar el pin del sensor para despertar el módulo
-                xb.sleep_now(SLEEP_DURATION_MS, True)
+                elif self.device_state == self.STATE_SENSOR_TRIGGERED:
+                    print("--- Estado: SENSOR_TRIGGERED ---")
+                    self.feed_watchdog()
+                    self.check_pins_sensor()
+                    if self.pin_sensor_general == 1:
+                        current_time = time.ticks_ms()
+                        # Comprobar si ha pasado suficiente tiempo desde la última notificación para no saturar la red a mensajes
+                        if self.camera_remote:
+                            if time.ticks_diff(current_time, self.last_sensor_notification_time) >= self.DEBOUNCE_SENSOR_TIME_MS:  
+                                command_to_send = "SENSOR:ON"
+                                print("Enviando notificación de sensor activado")
+                                if self.safe_send_and_wait_ack(self.remote_camera_addr, command_to_send):
+                                    self.last_sensor_notification_time = current_time
+                                else:
+                                    self.contador_fallo_comunicacion += 1
+                            else:
+                                print("Esperando para reenviar notificación de sensor: {} segundos restantes".format((self.DEBOUNCE_SENSOR_TIME_MS - time.ticks_diff(current_time, self.last_sensor_notification_time) )//1000))
+                                    
+                        if self.local_camera:
+                            if time.ticks_diff(current_time, self.camera_on_time) >= self.CAMERA_ON_DURATION_MS:
+                                self.turn_on_camera()  # Activar cámara localmente
+                                self.camera_on_time = current_time
 
-                # Llamar a wake_reason() UNA SOLA VEZ y guardar el resultado.
-                wake_reason = xb.wake_reason()
-                if wake_reason is xbee.PIN_WAKE:
-                    print("Despertado por el sensor.")
-                    device_state = STATE_SENSOR_TRIGGERED
-                else:
-                    print("Despertado por: {}".format(wake_reason))
-                    device_state = STATE_REPORT_BATTERY  # Por seguridad, reportar y seguir
+                        time.sleep_ms(self.CHECK_SENSOR_INTERVAL_MS)  # Esperar antes de verificar de nuevo
+                    else:
+                        if self.local_camera and self.pin_camera.value() == 1:
+                            self.turn_off_camera()
+                            
+                        # El sensor ya no está activado, volver a dormir
+                        print("Sensor ya no activado, volviendo a modo SLEEP/IDLE")
+                        if self.deep_sleep:
+                            self.device_state = self.STATE_SLEEP
+                        else:
+                            self.device_state = self.STATE_IDLE
+                
+                elif self.device_state == self.STATE_ERROR:
+                    print("--- Estado: ERROR ---")
+                    self.feed_watchdog()
+                    print("Intentando reconectar en {} segundos...".format(self.STATE_ERROR_SLEEP_MS / 1000))
+                    time.sleep_ms(self.STATE_ERROR_SLEEP_MS)
+                    self.setup()
+                    self.feed_watchdog()
+                    self.device_state = self.STATE_STARTUP
+                
+                self.check_coordinator_retry() # Background check for coordinator retries
+            
+            except Exception as e:
+                self.feed_watchdog()
+                print("Error inesperado en el bucle principal: {}".format(e))
+                self.device_state = self.STATE_ERROR
+                time.sleep_ms(self.STATE_ERROR_SLEEP_MS)
 
-            elif device_state == STATE_REPORT_BATTERY:
-                print("--- Estado: REPORT_BATTERY ---")
-                battery_voltage = get_battery_status(as_string=False)
-                message = "{}:{:.2f}:Reporte periodico.".format(DEVICE_ID_NI, battery_voltage)
-                if safe_send_message(TARGET_64BIT_ADDR, message):
-                    # El reporte fue exitoso y se recibió FBK, volver a dormir.
-                    print("Reporte de batería enviado con éxito.")
-                    device_state = STATE_SLEEP
-                else:
-                    # No se recibió FBK, se asume pérdida de conexión.
-                    print("Fallo al enviar reporte de batería. Entrando en modo de error para reconectar.")
-                    device_state = STATE_ERROR
-
-            elif device_state == STATE_SENSOR_ACTIVE:
-                print("--- Estado: IDLE --- Espererando timer camera se acabe y el sensor se apague")
-                # El dispositivo está despierto, revisando el estado del sensor
-                check_pins_sensor()
-                print("pin_sensor_general =", pin_sensor_general)
-                print("pin_sensor_1.value() =", pin_sensor_1.value())
-                print("pin_sensor_2.value() =", pin_sensor_2.value())
-                print("pin_sensor_3.value() =", pin_sensor_3.value())
-                print("pin_sensor_4.value() =", pin_sensor_4.value())
-                print("Camera timer:", time.ticks_diff(time.ticks_ms(), camera_on_time), "ms")
-
-                if pin_sensor_general == 0:
-                    print("Sensor apagado, pasamos a estado REPORT_BATTERY.")
-                    device_state = STATE_REPORT_BATTERY
-
-                elif time.ticks_diff(time.ticks_ms(), camera_on_time) > TIME_TO_REPORT_SENSORT_TRIGERED:
-                    battery_voltage = get_battery_status(as_string=False)
-                    message = "{}:{:.2f}:ALERTA! Sensor activado.".format(DEVICE_ID, battery_voltage)
-                    if not safe_send_message(TARGET_64BIT_ADDR, message):
-                        print("Fallo al enviar la alerta.")
-                    device_state = STATE_SENSOR_ACTIVE  # Vuelve a esperar
-                time.sleep_ms(1000)
-
-            elif device_state == STATE_SENSOR_TRIGGERED:
-                print("--- Estado: SENSOR_TRIGGERED ---")
-                pin_camera.value(1)
-                camera_on_time = time.ticks_ms()
-                print("Cámara activada.")
-                check_pins_sensor()
-                battery_voltage = get_battery_status(as_string=False)
-                message = "{}:{:.2f}:ALERTA! Sensor activado.".format(DEVICE_ID, battery_voltage)
-                if not safe_send_message(TARGET_64BIT_ADDR, message):
-                    print("Fallo al enviar la alerta.")
-                    # Aunque falle el envío, la cámara ya está encendida.
-                device_state = STATE_SENSOR_ACTIVE  # Vuelve a esperar
-
-            elif device_state == STATE_ERROR:
-                print("--- Estado: ERROR ---")
-                # Intentar recuperarse cada 60 segundos
-                print("Intentando reconectar en 60 segundos...")
-                time.sleep(STATE_ERROR_SLEEP_MS)
-                device_state = STATE_STARTUP  # Intenta el ciclo de arranque de nuevo
-
-        except Exception as e:
-            print("Error inesperado en el bucle principal: {}".format(e))
-            # Un error grave podría poner el dispositivo en estado de ERROR
-            device_state = STATE_ERROR
-            time.sleep(10)  # Esperar antes de reintentar
-
-
+# --- Lógica Principal ---
 if __name__ == '__main__':
-    main()
+    end_device = EndDevice(xbee_instance=xbee_device, deep_sleep=True, camera_remote=False, local_camera=True)
+    end_device.run()
