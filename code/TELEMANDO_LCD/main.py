@@ -98,6 +98,55 @@ def net_ok():
     except Exception as e:
         return False
 
+def send_message(target_addr, message):
+    """
+    Envía un mensaje sin esperar confirmación.
+    """
+    w.feed()  # Usar watchdog global
+    try:
+        xbee.transmit(target_addr, message)
+        w.feed()
+        return True
+    except Exception as e:
+        w.feed()
+        print("Error al enviar mensaje: {}".format(e))
+        return False
+
+def safe_send_and_wait_ack(target_addr, message, retries=3):
+    """
+    Envía un mensaje y espera un ACK del destinatario.
+    Reintenta hasta 'retries' veces si no recibe confirmación.
+    """
+    w.feed()
+    respuesta_recibida = False
+    for attempt in range(retries):
+        try:
+            print("Enviando con ACK (intento {}/{}) '{}'".format(attempt + 1, retries, message))
+            xbee.transmit(target_addr, message)
+            
+            # Esperar feedback
+            start_wait = time.ticks_ms()
+            while time.ticks_diff(time.ticks_ms(), start_wait) < 3000:  # HEARING_INTERVAL_MS = 3000
+                w.feed()
+                receivedg = xbee.receive()
+                if receivedg and receivedg['sender_eui64'] == target_addr:
+                    payload = receivedg['payload'].decode('utf-8')
+                    print("Recibido: '{}'".format(payload))
+                    respuesta_recibida = True
+                    return True
+                time.sleep_ms(100)  # SLEEP_DURATION_MS = 100
+            if not respuesta_recibida:
+                print("No se recibió confirmacion en el tiempo esperado.")
+        except Exception as e:
+            w.feed()
+            print("Error al transmitir/recibir: {}".format(e))
+        if attempt < retries - 1:
+            w.feed()
+            print("Reintentando en {} segundos...".format(1))  # RETRY_DELAY_MS / 1000 = 1
+            time.sleep_ms(1000)  # RETRY_DELAY_MS = 1000
+    print("Fallo al enviar y confirmar mensaje tras varios reintentos.")
+    return False
+
 def send(addr, mensaje, wait=False, retry=1):
     global w, menu_handler
     menu_handler.extra_msg = ""  # Reset extra message
@@ -105,61 +154,12 @@ def send(addr, mensaje, wait=False, retry=1):
         menu_handler.msg = "NO RED"
         return False
     
-    start = time.ticks_ms()
-    for att in range(retry):
-        try:
-            w.feed()
-            print("Enviando: {} a {}".format(mensaje, [hex(b) for b in addr]))
-            xbee.transmit(addr, mensaje.encode('utf-8'))
-            
-            if not wait:
-                menu_handler.msg = "OK"
-                return True
-            
-            t_start = time.ticks_ms()
-            while time.ticks_diff(time.ticks_ms(), t_start) < T_RETRY:
-                w.feed()
-                rx = xbee.receive()
-                if rx and rx['sender_eui64'] == addr:
-                    try:
-                        payload = rx['payload'].decode('utf-8')
-                    except UnicodeError:
-                        payload = "" # Or handle the error as you see fit
-                    print("Recibido: {}".format(payload))
-                    
-                    # Parse payload for relevant info
-                    parts = payload.split(', ')
-                    camara = ""
-                    bateria = ""
-                    for part in parts:
-                        if part.startswith('Camara:'):
-                            camara = part
-                        elif part.startswith('Bateria:'):
-                            bateria = part
-                    
-                    menu_handler.msg = camara if camara else "ACK OK"
-                    menu_handler.extra_msg = bateria if bateria else ""
-                    
-                    return True
-                time.sleep_ms(10)
-                
-                if time.ticks_diff(time.ticks_ms(), start) > 5000:
-                    menu_handler.msg = "TIMEOUT"
-                    return False
-                
-            menu_handler.msg = "NO ACK"
-            
-        except Exception as e:
-            w.feed()
-            print("Error: {}".format(e))
-            menu_handler.msg = "ERR"
-            
-        if att < retry - 1:
-            w.feed()
-            time.sleep_ms(250)
-    
-    menu_handler.msg = "FALLO"
-    return False
+    if not wait:
+        # Usar send_message para envío sin ACK
+        return send_message(addr, mensaje.encode('utf-8'))
+    else:
+        # Usar safe_send_and_wait_ack para envío con ACK
+        return safe_send_and_wait_ack(addr, mensaje.encode('utf-8'), retries=retry)
 
 def main():
     global state, w, last, cmd, last_act, uart, menu_handler
@@ -171,7 +171,7 @@ def main():
         did = xbee.atcmd('NI') or DID
         
         # Initialize I2C with explicit pins and frequency
-        i2c = I2C(1)  # Use 400kHz standard frequency
+        i2c = I2C(1, freq=400000)  # Use 400kHz standard frequency
         time.sleep_ms(100)  # Allow I2C to stabilize
         
         print("Scanning I2C bus...")
@@ -260,7 +260,6 @@ def main():
                 
                 state = S_IDLE
                 cmd = ""
-                time.sleep_ms(20)
                 w.feed()
                 
             elif state == S_IDLE:
@@ -280,39 +279,8 @@ def main():
                     now = time.ticks_ms()
                     
                     # Auto exit menu after inactivity
-                    menu_handler.check_timeout(now)
+                    # menu_handler.check_timeout(now)
                     
-                    # # Serial command simulation (from XCTU terminal)
-                    # try:
-                    #     serial_cmd = stdin.read()  # Non-blocking read
-                    #     if serial_cmd:
-                    #         serial_cmd = serial_cmd.upper()
-                    #         if 'U' in serial_cmd:
-                    #             last = now
-                    #             state_change, new_state = menu_handler.handle_button_press('UP', now, get_device_names, update_device)
-                    #             if state_change:
-                    #                 state = S_CMD if new_state == 'CMD' else S_IDLE
-                    #                 cmd = menu_handler.get_command()
-                    #                 break
-                    #         elif 'O' in serial_cmd:
-                    #             last = now
-                    #             state_change, new_state = menu_handler.handle_button_press('OK', now, get_device_names, update_device)
-                    #             if state_change:
-                    #                 state = S_CMD if new_state == 'CMD' else S_IDLE
-                    #                 cmd = menu_handler.get_command()
-                    #                 break
-                    #         elif 'D' in serial_cmd:
-                    #             last = now
-                    #             state_change, new_state = menu_handler.handle_button_press('DOWN', now, get_device_names, update_device)
-                    #             if state_change:
-                    #                 state = S_CMD if new_state == 'CMD' else S_IDLE
-                    #                 cmd = menu_handler.get_command()
-                    #                 break
-                    # except:
-                    #     pass
-                    # print(btn.value())       # 1 cuando suelto, 0 cuando pulso a GND
-                    # Button handling
-                    print("UP: {}, OK: {}, DN: {}".format(bUP.value(), bOK.value(), bDN.value()))
                     if time.ticks_diff(now, last) > T_DEB:
                         if bUP.value() == 0:
                             last = now
@@ -321,7 +289,7 @@ def main():
                                 state = S_CMD if new_state == 'CMD' else S_IDLE
                                 cmd = menu_handler.get_command()
                                 break
-                            time.sleep_ms(T_DEB)
+                            # time.sleep_ms(T_DEB)
                             
                         elif bDN.value() == 0:
                             last = now
@@ -330,7 +298,7 @@ def main():
                                 state = S_CMD if new_state == 'CMD' else S_IDLE
                                 cmd = menu_handler.get_command()
                                 break
-                            time.sleep_ms(T_DEB)
+                            # time.sleep_ms(T_DEB)
                             
                         elif bOK.value() == 0:
                             last = now
@@ -339,15 +307,15 @@ def main():
                                 state = S_CMD if new_state == 'CMD' else S_IDLE
                                 cmd = menu_handler.get_command()
                                 break
-                            time.sleep_ms(T_DEB)
+                            # time.sleep_ms(T_DEB)
                 
                     time.sleep_ms(50)
                     
                     if time.ticks_diff(time.ticks_ms(), t_start) >= T_SLEEP:
                         break
 
-                if state == S_IDLE and time.ticks_diff(time.ticks_ms(), t_start) >= T_SLEEP:
-                    state = S_REP
+                # if state == S_IDLE and time.ticks_diff(time.ticks_ms(), t_start) >= T_SLEEP:
+                #     state = S_REP
                 
             elif state == S_REP:
                 w.feed()
@@ -367,7 +335,7 @@ def main():
                 send(C_ADDR, message, False)
                 
                 state = S_IDLE
-                time.sleep_ms(20)
+                # time.sleep_ms(20)
                 w.feed()
 
             elif state == S_ERR:

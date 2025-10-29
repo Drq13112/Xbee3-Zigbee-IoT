@@ -12,12 +12,12 @@ class MenuHandler:
         self.bat_st = bat_st_function
         
         # Menu state variables
-        self.mpos = 0              # Current menu position
-        self.mact = False          # Menu active flag
-        self.selection_menu = False  # Device selection menu active
-        self.last_act = 0          # Last activity timestamp
-        self.msg = ""              # Status message
-        self.extra_msg = ""        # Additional status message
+        self.mpos = 0                   # Current menu position
+        self.mact = False               # Menu active flag
+        self.selection_menu = False     # Device selection menu active
+        self.last_act = 0               # Last activity timestamp
+        self.msg = ""                   # Status message
+        self.extra_msg = ""             # Additional status message
         
         # Current device tracking
         self.current_device_name = None
@@ -57,7 +57,8 @@ class MenuHandler:
         
         # Title - smaller text, no battery formatting in menu
         self.lcd.text("TELEMANDO", 0, 0)
-        self.lcd.text(str(int(self.bat_st(False)))+"V", self.lcd.width - 25, 0)
+        # self.lcd.text(str(int(self.bat_st(False)))+"V", self.lcd.width - 25, 0)
+        self.lcd.text(self.bat_st(True) + "V", self.lcd.width - 35, 0)
 
         # Separator line
         self.lcd.hline(0, 10, self.lcd.width, 1)
