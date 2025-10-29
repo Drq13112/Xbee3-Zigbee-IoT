@@ -126,6 +126,7 @@ jobs:
             echo "✅ Wiki updated successfully."
           else
             echo "ℹ️ No changes to commit in Wiki."
+          fi
 
       - name: ✅ Final Summary
         run: |
