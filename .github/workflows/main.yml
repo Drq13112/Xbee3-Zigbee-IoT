@@ -100,9 +100,9 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: Andrew-Chen-Wang/github-wiki-action@v1
         with:
-          path: docs/_build/markdown  # Directory with generated Markdown docs
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "Update documentation from CI"
+          WIKI_DIR: docs/_build/markdown  # Directory with generated Markdown docs
+          GH_PAT: ${{ secrets.GITHUB_TOKEN }}
+          WIKI_PUSH_MESSAGE: "Update documentation from CI"
 
       - name: ✅ Final Summary
         run: |
