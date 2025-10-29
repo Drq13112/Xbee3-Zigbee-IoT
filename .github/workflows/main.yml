@@ -61,7 +61,11 @@ jobs:
           fi
 
           # conf.py mínimo con autodoc
-          echo "project = 'XBee Project'" > docs/conf.py
+          echo "import sys" > docs/conf.py
+          echo "import os" >> docs/conf.py
+          echo "sys.path.insert(0, os.path.abspath('code'))" >> docs/conf.py
+          echo "" >> docs/conf.py
+          echo "project = 'XBee Project'" >> docs/conf.py
           echo "author = 'David'" >> docs/conf.py
           echo "release = '1.0'" >> docs/conf.py
           echo "" >> docs/conf.py
@@ -119,7 +123,7 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then
             git add .
             git commit -m "📚 Update Wiki from CI ($GITHUB_SHA)"
-            git push origin main || git push
+            git push origin master || git push origin main
             echo "✅ Wiki updated successfully."
           else
             echo "ℹ️ No changes to commit in Wiki."
