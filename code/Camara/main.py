@@ -43,7 +43,7 @@ class Camara(XBeeDevice):
             print("Comando ON recibido. Encendiendo cámara indefinidamente.")
             self.turn_on_camera()
             self.manual_camera = True  # Anula el temporizador
-            self.device_state = self.STATE_SLEEP
+            self.device_state = self.STATE_IDLE
             self.safe_send(sender, response_message)
             return True
         
@@ -51,25 +51,26 @@ class Camara(XBeeDevice):
             print("Comando OFF recibido. Apagando cámara.")
             self.turn_off_camera()
             self.manual_camera = False
-            self.device_state = self.STATE_SLEEP
+            self.device_state = self.STATE_IDLE
             self.safe_send(sender, response_message)
             return True
         
-        elif command == "REPORT":
+        
+        elif command == "REQ_REPORT":
             print("Comando REPORT recibido.")
             battery_status = self.get_battery_status(as_string=True)
             report = "Estado: {}, Camara: {}, {}, Manual: {}".format(self.device_state, "ON" if self.pin_camera.value() else "OFF", battery_status, self.manual_camera)
             self.safe_send(sender, "{}: {}".format(self.device_node_id, report))
             if sender == self.coordinator_addr:
                 self.contador_fallo_comunicacion = 0
-            self.device_state = self.STATE_SLEEP
+            self.device_state = self.STATE_IDLE
             return True
             
         elif command == "SENSOR:ON":
             print("Comando SENSOR:ON recibido. Encendiendo cámara por temporizador.")
             self.turn_on_camera()
             self.camera_on_time = time.ticks_ms()
-            self.device_state = self.STATE_SLEEP
+            self.device_state = self.STATE_IDLE
             self.safe_send(sender, response_message)
             return True
         
@@ -111,11 +112,11 @@ class Camara(XBeeDevice):
                     battery_voltage = self.get_battery_status(as_string=False)
                     message = "{}:{:.2f}:Dispositivo iniciado".format(self.device_node_id, battery_voltage)
                     if self.safe_send_and_wait_ack(self.coordinator_addr, message):
-                        self.device_state = self.STATE_SLEEP
+                        self.device_state = self.STATE_IDLE
                     else:
                         self.device_state = self.STATE_ERROR
                 
-                elif self.device_state == self.STATE_SLEEP:
+                elif self.device_state == self.STATE_IDLE:
                     if (self.old_state != self.device_state):
                         print("--- Estado: SLEEP ---")
                     self.feed_watchdog()
@@ -125,13 +126,14 @@ class Camara(XBeeDevice):
                         if self.check_and_process_incoming_messages():
                             time.sleep_ms(100)
                             break
-                        if self.pin_camera.value() == 1 and not self.manual_camera:
-                            print("Tiempo restante para apagado: {} segundos.".format((self.CAMERA_ON_DURATION_MS - time.ticks_diff(time.ticks_ms(), self.camera_on_time)) // 1000))
+                        # if self.pin_camera.value() == 1 and not self.manual_camera:
+                            # print("Tiempo restante para apagado: {} segundos.".format((self.CAMERA_ON_DURATION_MS - time.ticks_diff(time.ticks_ms(), self.camera_on_time)) // 1000))
+                            
                         # --- Gestión de la cámara (se apaga por temporizador solo si no es manual) ---
                         if self.pin_camera.value() == 1 and not self.manual_camera and time.ticks_diff(time.ticks_ms(), self.camera_on_time) > self.CAMERA_ON_DURATION_MS:
                             self.turn_off_camera()
                             print("Cámara apagada por temporizador.")
-                            self.device_state = self.STATE_SLEEP
+                            self.device_state = self.STATE_IDLE
                             time.sleep_ms(50)
                 
                 # elif self.device_state == self.STATE_SENSOR_TRIGGERED:
@@ -139,7 +141,7 @@ class Camara(XBeeDevice):
                 #     self.feed_watchdog()
                 #     self.turn_on_camera()
                 #     self.camera_on_time = time.ticks_ms()
-                #     self.device_state = self.STATE_SLEEP
+                #     self.device_state = self.STATE_IDLE
                 
                 elif self.device_state == self.STATE_ERROR:
                     print("--- Estado: ERROR ---")
