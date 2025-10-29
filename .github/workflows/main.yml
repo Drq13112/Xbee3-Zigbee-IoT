@@ -89,9 +89,6 @@ jobs:
       - name: 📤 Deploy Documentation to GitHub Wiki (if on main branch)
         if: github.ref == 'refs/heads/main'
         uses: Andrew-Chen-Wang/github-wiki-action@v1
-        env:
-          ACTION_MAIL: "github-actions[bot]@users.noreply.github.com"
-          ACTION_NAME: "github-actions[bot]"
         with:
           WIKI_DIR: docs/_build/markdown
           GH_PAT: ${{ secrets.GITHUB_TOKEN }}
