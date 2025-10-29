@@ -8,8 +8,6 @@ jobs:
   quality_check:
     name: 🧠 Lint, Syntax & Unit Tests
     runs-on: ubuntu-latest
-
-    # 👇 permisos movidos aquí (a nivel de job)
     permissions:
       contents: write
 
@@ -68,7 +66,6 @@ jobs:
             echo ".. toctree::" >> docs/index.rst
             echo "   :maxdepth: 2" >> docs/index.rst
             echo "   :caption: Contents:" >> docs/index.rst
-            echo "" >> docs/index.rst
 
             echo "project = 'XBee Project'" > docs/conf.py
             echo "author = 'David'" >> docs/conf.py
@@ -77,7 +74,6 @@ jobs:
             echo "extensions = []" >> docs/conf.py
             echo "templates_path = ['_templates']" >> docs/conf.py
             echo "exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']" >> docs/conf.py
-            echo "" >> docs/conf.py
             echo "html_theme = 'alabaster'" >> docs/conf.py
           fi
 
@@ -87,13 +83,26 @@ jobs:
 
       - name: 📤 Deploy Documentation to GitHub Wiki (if on main branch)
         if: github.ref == 'refs/heads/main'
-        uses: Andrew-Chen-Wang/github-wiki-action@v4
-        with:
-          WIKI_DIR: docs/_build/markdown
-          GH_PAT: ${{ secrets.GITHUB_TOKEN }}
-          WIKI_PUSH_MESSAGE: "Update documentation from CI"
-          GH_MAIL: "github-actions[bot]@users.noreply.github.com"
-          GH_NAME: "github-actions[bot]"
+        run: |
+          echo "🚀 Deploying generated docs to Wiki..."
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+          # Clonamos el wiki en una carpeta temporal
+          git clone "https://github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
+
+          # Copiamos los archivos generados por Sphinx
+          rsync -av --delete docs/_build/markdown/ wiki/
+
+          cd wiki
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "📚 Update Wiki from CI ($GITHUB_SHA)"
+            git push origin main || git push
+            echo "✅ Wiki updated successfully."
+          else
+            echo "ℹ️ No changes to commit in Wiki."
+          fi
 
       - name: ✅ Final Summary
         run: |
