@@ -100,9 +100,9 @@ jobs:
             echo "   :show-inheritance:" >> docs/modules.rst
           done
 
-        mkdir -p docs/_build/markdown
-        sphinx-build -b markdown docs docs/_build/markdown || echo "⚠️ Sphinx build failed, continuing anyway"
-        echo "✅ Documentation generated successfully."
+          mkdir -p docs/_build/markdown
+          sphinx-build -b markdown docs docs/_build/markdown || echo "⚠️ Sphinx build failed, continuing anyway"
+          echo "✅ Documentation generated successfully."
 
       - name: 📤 Deploy Documentation to GitHub Wiki (if on main branch)
         if: github.ref == 'refs/heads/main'
