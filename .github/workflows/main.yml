@@ -56,37 +56,42 @@ jobs:
         run: |
           echo "📚 Generating documentation with Sphinx autodoc..."
 
-          if [ ! -d "docs" ]; then
-            mkdir -p docs
-          fi
+          mkdir -p docs
 
-          # conf.py mínimo con autodoc
-          echo "import sys" > docs/conf.py
-          echo "import os" >> docs/conf.py
-          echo "sys.path.insert(0, os.path.abspath('code'))" >> docs/conf.py
-          echo "" >> docs/conf.py
-          echo "project = 'XBee Project'" >> docs/conf.py
-          echo "author = 'David'" >> docs/conf.py
-          echo "release = '1.0'" >> docs/conf.py
-          echo "" >> docs/conf.py
-          echo "extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon', 'myst_parser']" >> docs/conf.py
-          echo "templates_path = ['_templates']" >> docs/conf.py
-          echo "exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']" >> docs/conf.py
-          echo "" >> docs/conf.py
-          echo "html_theme = 'alabaster'" >> docs/conf.py
+          # conf.py mínimo con autodoc y mocks
+          cat << EOF > docs/conf.py
+          import sys
+          import os
+          sys.path.insert(0, os.path.abspath('code'))
 
-          # index.rst principal
-          echo "XBee Project Documentation" > docs/index.rst
-          echo "==========================" >> docs/index.rst
-          echo "" >> docs/index.rst
-          echo ".. toctree::" >> docs/index.rst
-          echo "   :maxdepth: 2" >> docs/index.rst
-          echo "   :caption: Contents:" >> docs/index.rst
-          echo "" >> docs/index.rst
-          echo "   modules" >> docs/index.rst
-          echo "" >> docs/index.rst
+          project = 'XBee Project'
+          author = 'David'
+          release = '1.0'
 
-          # Genera un modules.rst con todos los scripts en code/
+          extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon', 'myst_parser']
+
+          # Evita errores de import de módulos de MicroPython o hardware
+          autodoc_mock_imports = ['ROUTER', 'END_DEVICE', 'COMUNICACION_1_XBEE', 'COMUNICACION_2_XBEE', 'Camara', 'COORD', 'TELEMANDO', 'TELEMANDO_LCD', 'SENSOR_REMOTO', 'tools']
+
+          templates_path = ['_templates']
+          exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+
+          html_theme = 'alabaster'
+          EOF
+
+                    # index.rst
+                    cat << EOF > docs/index.rst
+          XBee Project Documentation
+          ==========================
+
+          .. toctree::
+            :maxdepth: 2
+            :caption: Contents:
+
+            modules
+          EOF
+
+          # modules.rst con todos los scripts
           echo "Modules" > docs/modules.rst
           echo "=======" >> docs/modules.rst
           for f in $(find code -name "*.py" -not -name "__init__.py"); do
@@ -98,10 +103,9 @@ jobs:
             echo "   :show-inheritance:" >> docs/modules.rst
           done
 
-          mkdir -p docs/_build/markdown
-          sphinx-build -b markdown docs docs/_build/markdown || echo "⚠️ Sphinx build failed, continuing anyway"
-          echo "✅ Documentation generated successfully."
-
+        mkdir -p docs/_build/markdown
+        sphinx-build -b markdown docs docs/_build/markdown || echo "⚠️ Sphinx build failed, continuing anyway"
+        echo "✅ Documentation generated successfully."
 
       - name: 📤 Deploy Documentation to GitHub Wiki (if on main branch)
         if: github.ref == 'refs/heads/main'
@@ -110,13 +114,8 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
-          # Limpiamos cualquier directorio wiki existente
           rm -rf wiki
-
-          # Clonamos el wiki en una carpeta temporal
           git clone "https://github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
-
-          # Copiamos los archivos generados por Sphinx
           rsync -av --delete docs/_build/markdown/ wiki/
 
           cd wiki
@@ -127,7 +126,6 @@ jobs:
             echo "✅ Wiki updated successfully."
           else
             echo "ℹ️ No changes to commit in Wiki."
-          fi
 
       - name: ✅ Final Summary
         run: |
