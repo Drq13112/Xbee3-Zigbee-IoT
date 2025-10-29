@@ -22,7 +22,7 @@ jobs:
 
       - name: 📦 Install dependencies
         run: |
-          pip install flake8 black pytest pytest-cov mock mpremote sphinx sphinx-rtd-theme sphinx-markdown-builder
+          pip install flake8 black pytest pytest-cov mock mpremote sphinx sphinx-rtd-theme sphinx-markdown-builder myst-parser
 
       - name: 🧹 Lint code style (flake8)
         run: |
