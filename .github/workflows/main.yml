@@ -1,5 +1,7 @@
+# Nombre del Workflow
 name: XBee Firmware Quality Check
 
+# Triggers: se ejecuta en 'push' a cualquier rama y en 'pull_request'
 on:
   push:
   pull_request:
@@ -9,6 +11,7 @@ jobs:
     name: 🧠 Lint, Syntax & Unit Tests
     runs-on: ubuntu-latest
     permissions:
+      # Se necesita permiso de escritura para poder empujar a la Wiki
       contents: write
 
     steps:
@@ -22,35 +25,41 @@ jobs:
 
       - name: 📦 Install dependencies
         run: |
-          pip install flake8 black pytest pytest-cov mock mpremote sphinx sphinx-rtd-theme sphinx-markdown-builder myst-parser
+          pip install flake8 black pytest pytest-cov mock mpremote \
+                      sphinx sphinx-rtd-theme sphinx-markdown-builder \
+                      myst-parser mpy-cross
 
       - name: 🧹 Lint code style (flake8)
         run: |
           echo "🔍 Checking for style and syntax issues..." | tee -a $GITHUB_STEP_SUMMARY
+          # Permite que el linting falle sin detener la pipeline, pero reporta
           flake8 code --max-line-length=120 --ignore=E402,E501,W503 | tee -a $GITHUB_STEP_SUMMARY || true
 
       - name: 🎨 Check formatting (black)
         run: |
           echo "🎨 Checking code format (black)..." | tee -a $GITHUB_STEP_SUMMARY
+          # Permite que el formateo falle sin detener la pipeline, pero reporta
           black --check code | tee -a $GITHUB_STEP_SUMMARY || true
 
-      - name: 🧠 MicroPython syntax validation
+      - name: 🧠 MicroPython syntax validation (mpy-cross)
         run: |
-          echo "🧠 Checking syntax compatibility..."
+          echo "🧠 Checking MicroPython syntax compatibility..."
           for f in $(find code -name "*.py"); do
             echo "Validating syntax: $f"
-            python -m py_compile "$f"
+            # mpy-cross es un compilador más estricto específico de MicroPython
+            mpy-cross "$f"
           done
 
       - name: 🧪 Run unit tests with coverage
         run: |
           echo "🧪 Running tests with coverage..."
-          pytest -q --disable-warnings --cov=code --cov-report=term-missing || true
-
-      - name: 📊 Upload coverage to summary
-        run: |
+          # Ejecuta pytest y guarda la salida en un archivo
+          # ¡Si este paso falla, la pipeline entera fallará (lo cual es bueno)!
+          pytest -q --disable-warnings --cov=code --cov-report=term-missing > pytest_coverage.txt
+          
           echo "## 📈 Coverage Report" >> $GITHUB_STEP_SUMMARY
-          pytest -q --disable-warnings --cov=code --cov-report=term >> $GITHUB_STEP_SUMMARY || true
+          # Añade la salida de pytest al resumen
+          cat pytest_coverage.txt >> $GITHUB_STEP_SUMMARY
 
       - name: 📚 Generate Documentation (Sphinx autodoc)
         run: |
@@ -59,9 +68,10 @@ jobs:
           mkdir -p docs
 
           # conf.py mínimo con autodoc y mocks
+          # RECOMENDACIÓN: Mover este archivo al repositorio
           echo "import sys" > docs/conf.py
           echo "import os" >> docs/conf.py
-          echo "sys.path.insert(0, os.path.abspath('code'))" >> docs/conf.py
+          echo "sys.path.insert(0, os.path.abspath('.'))" >> docs/conf.py # Ruta al código
           echo "" >> docs/conf.py
           echo "project = 'XBee Project'" >> docs/conf.py
           echo "author = 'David'" >> docs/conf.py
@@ -70,14 +80,16 @@ jobs:
           echo "extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon', 'myst_parser']" >> docs/conf.py
           echo "" >> docs/conf.py
           echo "# Evita errores de import de módulos de MicroPython o hardware" >> docs/conf.py
-          echo "autodoc_mock_imports = ['ROUTER', 'END_DEVICE', 'COMUNICACION_1_XBEE', 'COMUNICACION_2_XBEE', 'Camara', 'COORD', 'TELEMANDO', 'TELEMANDO_LCD', 'SENSOR_REMOTO', 'tools']" >> docs/conf.py
+          echo "autodoc_mock_imports = ['ROUTER', 'END_DEVICE', 'COMUNICACION_1_XBEE', 'COMUNICACION_2_XBEE', 'Camara', 'COORD', 'TELEMANDO', 'TELEMANDO_LCD', 'SENSOR_REMOTO', 'tools', 'xbee', 'micropython', 'time', 'machine', 'digi', 'ure', 'ujson', 'network']" >> docs/conf.py
           echo "" >> docs/conf.py
           echo "templates_path = ['_templates']" >> docs/conf.py
           echo "exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']" >> docs/conf.py
           echo "" >> docs/conf.py
           echo "html_theme = 'alabaster'" >> docs/conf.py
+          echo "source_suffix = {'.rst': 'restructuredtext', '.md': 'markdown'}" >> docs/conf.py
 
           # index.rst
+          # RECOMENDACIÓN: Mover este archivo al repositorio
           echo "XBee Project Documentation" > docs/index.rst
           echo "==========================" >> docs/index.rst
           echo "" >> docs/index.rst
@@ -89,9 +101,11 @@ jobs:
           echo "" >> docs/index.rst
 
           # modules.rst con todos los scripts
+          # RECOMENDACIÓN: Mover este archivo al repositorio
           echo "Modules" > docs/modules.rst
           echo "=======" >> docs/modules.rst
           for f in $(find code -name "*.py" -not -name "__init__.py"); do
+            # Convierte 'code/mi/modulo.py' en 'code.mi.modulo'
             mod=$(echo $f | sed 's|/|.|g' | sed 's/.py$//')
             echo "" >> docs/modules.rst
             echo ".. automodule:: $mod" >> docs/modules.rst
@@ -101,7 +115,11 @@ jobs:
           done
 
           mkdir -p docs/_build/markdown
-          sphinx-build -b markdown docs docs/_build/markdown || echo "⚠️ Sphinx build failed, continuing anyway"
+          
+          # ¡Si sphinx-build falla, la pipeline entera fallará (lo cual es bueno)!
+          # Se construye en la raíz del proyecto para que sys.path.insert(0, '.') funcione
+          sphinx-build -b markdown docs docs/_build/markdown
+
           echo "✅ Documentation generated successfully."
 
       - name: 📤 Deploy Documentation to GitHub Wiki (if on main branch)
@@ -112,10 +130,15 @@ jobs:
           git config --global user.name "github-actions[bot]"
 
           rm -rf wiki
+          # Clona el repositorio de la wiki
           git clone "https://github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
+          
+          # Copia los archivos generados a la wiki.
+          # rsync es bueno para esto, asegura que solo se actualicen los cambios.
           rsync -av --delete docs/_build/markdown/ wiki/
 
           cd wiki
+          # Si hay cambios, haz commit y push
           if [ -n "$(git status --porcelain)" ]; then
             git add .
             git commit -m "📚 Update Wiki from CI ($GITHUB_SHA)"
@@ -127,5 +150,5 @@ jobs:
 
       - name: ✅ Final Summary
         run: |
-          echo "### ✅ Pipeline finished successfully" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Pipeline finished" >> $GITHUB_STEP_SUMMARY
           echo "All checks completed for $GITHUB_REPOSITORY" >> $GITHUB_STEP_SUMMARY
