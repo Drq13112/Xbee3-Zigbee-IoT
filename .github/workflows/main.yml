@@ -53,12 +53,13 @@ jobs:
       - name: 🧪 Run unit tests with coverage
         run: |
           echo "🧪 Running tests with coverage..."
-          # Ejecuta pytest y guarda la salida en un archivo
-          # ¡Si este paso falla, la pipeline entera fallará (lo cual es bueno)!
-          pytest -q --disable-warnings --cov=code --cov-report=term-missing > pytest_coverage.txt
+          # Ejecuta pytest.
+          # Permite que la pipeline continúe si el código de salida es 5 (no se encontraron tests).
+          # Fallará para cualquier otro error (ej: un test fallido, código 1).
+          pytest -q --disable-warnings --cov=code --cov-report=term-missing > pytest_coverage.txt || [ $? -eq 5 ]
           
           echo "## 📈 Coverage Report" >> $GITHUB_STEP_SUMMARY
-          # Añade la salida de pytest al resumen
+          # Añade la salida de pytest al resumen (estará vacío si no se corrió nada)
           cat pytest_coverage.txt >> $GITHUB_STEP_SUMMARY
 
       - name: 📚 Generate Documentation (Sphinx autodoc)
